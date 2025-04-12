@@ -8,12 +8,17 @@ class CustomUserCreateSerializer(UserCreateSerializer):
         model = CustomUser
         fields = ('id', 'email', 'username', 'password')
 
+
+
 class CustomUserSerializer(UserSerializer):
+    permissions = serializers.SerializerMethodField()
+
     class Meta(UserSerializer.Meta):
         model = CustomUser
-        fields = ('id', 'email', 'username')
+        fields = ('id', 'email', 'username', 'permissions')
 
-
+    def get_permissions(self, obj):
+        return list(obj.get_all_permissions())
 
 
 

@@ -3,53 +3,95 @@ from rest_framework.response import Response
 from rest_framework.decorators import action
 from rest_framework.parsers import MultiPartParser
 from rest_framework.filters import SearchFilter
-from .models import InternalEntity, InternalDepartment, ExternalEntity, ExternalDepartment, Document
-from .serializers import InternalEntitySerializer, InternalDepartmentSerializer, ExternalEntitySerializer, ExternalDepartmentSerializer, DocumentSerializer, EntityTypeSerializer,GetDocumentSerializer
 from django_filters.rest_framework import DjangoFilterBackend
+
+from rest_framework.permissions import IsAuthenticated
+from rest_framework.parsers import MultiPartParser
+from rest_framework.exceptions import PermissionDenied
+from rest_framework.filters import SearchFilter
+
+from .models import Document, InternalEntity, InternalDepartment, ExternalEntity, ExternalDepartment
+from .serializers import (
+    DocumentSerializer,
+    GetDocumentSerializer,
+    InternalEntitySerializer,
+    ExternalEntitySerializer,
+    InternalDepartmentSerializer,
+    ExternalDepartmentSerializer
+)
+from .permissions import IsDocumentAccessible,IsAdminOrReadOnly
+
 
 class InternalEntityViewSet(viewsets.ModelViewSet):
     queryset = InternalEntity.objects.all()
     serializer_class = InternalEntitySerializer
+    permission_classes = [IsAdminOrReadOnly]
+
     
 
 class InternalDepartmentViewSet(viewsets.ModelViewSet):
     queryset = InternalDepartment.objects.all()
     serializer_class = InternalDepartmentSerializer
+    permission_classes = [IsAdminOrReadOnly]
+
 
 class ExternalEntityViewSet(viewsets.ModelViewSet):
     queryset = ExternalEntity.objects.all()
     serializer_class = ExternalEntitySerializer
+    permission_classes = [IsAdminOrReadOnly]
+
 
 class ExternalDepartmentViewSet(viewsets.ModelViewSet):
     queryset = ExternalDepartment.objects.all()
     serializer_class = ExternalDepartmentSerializer
+    permission_classes = [IsAdminOrReadOnly]
+
+
+
+
 
 class DocumentViewSet(viewsets.ModelViewSet):
-    queryset = Document.objects.all()
     
+    queryset = Document.objects.all()
     parser_classes = [MultiPartParser]
-    filter_backends = [DjangoFilterBackend,SearchFilter]
-    filterset_fields = ['entity_type','document_type','external_entity','internal_entity','internal_department','external_department']
-    search_fields = ['title','document_number'] 
-       
+    permission_classes = [IsDocumentAccessible]
+    filter_backends = [DjangoFilterBackend, SearchFilter]
+    filterset_fields = ['entity_type', 'document_type', 'external_entity', 'internal_entity', 'internal_department', 'external_department']
+    search_fields = ['title', 'document_number']
+
+    def get_queryset(self):
+        return Document.objects.all()
+
+
     def perform_create(self, serializer):
         serializer.save(uploaded_by=self.request.user)
-    
+
     def get_serializer_class(self):
         if self.request.method == 'GET':
             return GetDocumentSerializer
         return DocumentSerializer
+
+
+    def perform_update(self, serializer):
+        user = self.request.user
+        if user.groups.filter(name='User').exists():
+            raise PermissionDenied("المستخدم العادي لا يمكنه تعديل الملفات.")
+        serializer.save()
+
+    def perform_destroy(self, instance):
+        user = self.request.user
+        if user.groups.filter(name='User').exists():
+            raise PermissionDenied("المستخدم العادي لا يمكنه حذف الملفات.")
+        instance.delete()
+
     
 
     @action(detail=False, methods=['get'])
     def get_initial_data(self, request):
-        # إرجاع جميع الجهات الداخلية والخارجية
         internal_entities = InternalEntity.objects.all()
         external_entities = ExternalEntity.objects.all()
-
         internal_entity_data = InternalEntitySerializer(internal_entities, many=True).data
         external_entity_data = ExternalEntitySerializer(external_entities, many=True).data
-
         return Response({
             'internal_entities': internal_entity_data,
             'external_entities': external_entity_data
@@ -72,6 +114,3 @@ class DocumentViewSet(viewsets.ModelViewSet):
             external_department_data = ExternalDepartmentSerializer(external_departments, many=True).data
             return Response({'external_departments': external_department_data})
         return Response({'error': 'External Entity ID is required'}, status=400)
-    
-    
-    
