@@ -55,8 +55,13 @@ class DocumentAdmin(admin.ModelAdmin):
     list_display = ('title', 'document_number', 'entity_type', 'document_type', 'uploaded_by', 'uploaded_at')
     list_filter = ('entity_type', 'document_type', 'uploaded_at')
     search_fields = ('title', 'document_number', 'notes')
-    readonly_fields = ('uploaded_at',)
-
+    readonly_fields = ('uploaded_at','uploaded_by')
+    
+    def save_model(self, request, obj, form, change):
+        # ❗️لو بيضيف جديد، سجل المستخدم الحالي
+        if not change or not obj.uploaded_by:
+            obj.uploaded_by = request.user
+        super().save_model(request, obj, form, change)
 
 # =========================
 # Internal Entities

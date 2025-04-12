@@ -51,8 +51,8 @@ class ExternalDepartment(models.Model):
 
 # الملفات المرفوعة
 class Document(models.Model):
-    INTERNAL = 'internal'
-    EXTERNAL = 'external'
+    INTERNAL = 'جهة داخلية'
+    EXTERNAL = 'جهة خارجية'
     ENTITY_TYPE_CHOICES = [
         (INTERNAL, 'جهة داخلية'),
         (EXTERNAL, 'جهة خارجية'),
@@ -67,16 +67,17 @@ class Document(models.Model):
     external_entity = models.ForeignKey(ExternalEntity, on_delete=models.SET_NULL, null=True, blank=True)
     external_department = models.ForeignKey(ExternalDepartment, on_delete=models.SET_NULL, null=True, blank=True)
     document_type = models.CharField(max_length=100, choices=[
-        ('incoming', 'وارد'),
-        ('outgoing', 'صادر')
-    ])
+        ('وارد', 'وارد'),
+        ('صادر', 'صادر')
+    ],
+    verbose_name=" النوع"
+)
     file = models.FileField(upload_to='documents/')
     uploaded_at = models.DateTimeField(auto_now_add=True)
     uploaded_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,
-        on_delete=models.SET_NULL,
-        null=True,
-        blank=True,
+        on_delete=models.CASCADE,
+        
         related_name='uploaded_documents',
         verbose_name="المستخدم الذي رفع الملف"
     )
