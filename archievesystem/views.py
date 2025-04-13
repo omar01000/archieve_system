@@ -5,7 +5,6 @@ from rest_framework.parsers import MultiPartParser
 from rest_framework.filters import SearchFilter
 from django_filters.rest_framework import DjangoFilterBackend
 
-from rest_framework.permissions import IsAuthenticated
 from rest_framework.parsers import MultiPartParser
 from rest_framework.exceptions import PermissionDenied
 from rest_framework.filters import SearchFilter
@@ -51,26 +50,28 @@ class ExternalDepartmentViewSet(viewsets.ModelViewSet):
 
 
 class DocumentViewSet(viewsets.ModelViewSet):
-    
-    queryset = Document.objects.all()
+    queryset = Document.objects.select_related(
+        'uploaded_by',
+        'internal_entity', 'internal_department',
+        'external_entity', 'external_department'
+    ).all()
     parser_classes = [MultiPartParser]
     permission_classes = [IsDocumentAccessible]
     filter_backends = [DjangoFilterBackend, SearchFilter]
-    filterset_fields = ['entity_type', 'document_type', 'external_entity', 'internal_entity', 'internal_department', 'external_department']
+    filterset_fields = [
+        'entity_type', 'document_type',
+        'external_entity', 'internal_entity',
+        'internal_department', 'external_department'
+    ]
     search_fields = ['title', 'document_number']
-
-    def get_queryset(self):
-        return Document.objects.all()
-
-
-    def perform_create(self, serializer):
-        serializer.save(uploaded_by=self.request.user)
 
     def get_serializer_class(self):
         if self.request.method == 'GET':
             return GetDocumentSerializer
         return DocumentSerializer
 
+    def perform_create(self, serializer):
+        serializer.save(uploaded_by=self.request.user)
 
     def perform_update(self, serializer):
         user = self.request.user
@@ -83,8 +84,6 @@ class DocumentViewSet(viewsets.ModelViewSet):
         if user.groups.filter(name='User').exists():
             raise PermissionDenied("المستخدم العادي لا يمكنه حذف الملفات.")
         instance.delete()
-
-    
 
     @action(detail=False, methods=['get'])
     def get_initial_data(self, request):

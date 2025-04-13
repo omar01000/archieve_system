@@ -8,7 +8,7 @@ class CustomUser(AbstractUser):
     email = models.EmailField(unique=True)
 
     USERNAME_FIELD = 'email'
-    REQUIRED_FIELDS = ['username']  # عشان لما تنشئ سوبر يوزر
+    REQUIRED_FIELDS = ['username',]  # عشان لما تنشئ سوبر يوزر
 
     def __str__(self):
         return self.username
@@ -27,7 +27,7 @@ class InternalEntity(models.Model):
 
 class InternalDepartment(models.Model):
     name = models.CharField(max_length=1000)
-    internal_entity = models.ForeignKey(InternalEntity, on_delete=models.CASCADE, related_name='faculties')
+    internal_entity = models.ForeignKey(InternalEntity, on_delete=models.CASCADE)
 
     def __str__(self):
         return self.name
@@ -43,7 +43,7 @@ class ExternalEntity(models.Model):
 
 class ExternalDepartment(models.Model):
     name = models.CharField(max_length=1000)
-    external_entity = models.ForeignKey(ExternalEntity, on_delete=models.CASCADE, related_name='departments')
+    external_entity = models.ForeignKey(ExternalEntity, on_delete=models.CASCADE)
 
     def __str__(self):
         return self.name
