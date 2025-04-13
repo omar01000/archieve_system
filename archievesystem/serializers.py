@@ -1,28 +1,5 @@
 from rest_framework import serializers
 from .models import InternalEntity, InternalDepartment, ExternalEntity, ExternalDepartment, Document
-from djoser.serializers import UserCreateSerializer, UserSerializer
-from .models import CustomUser
-
-class CustomUserCreateSerializer(UserCreateSerializer):
-    class Meta(UserCreateSerializer.Meta):
-        model = CustomUser
-        fields = ('id', 'email', 'username', 'password')
-
-
-
-class CustomUserSerializer(UserSerializer):
-    permissions = serializers.SerializerMethodField()
-
-    class Meta(UserSerializer.Meta):
-        model = CustomUser
-        fields = ('id', 'email', 'username', 'permissions')
-
-    def get_permissions(self, obj):
-        return list(obj.get_all_permissions())
-
-
-
-
 
 
 
@@ -34,24 +11,24 @@ class EntityTypeSerializer(serializers.Serializer):
 class InternalEntitySerializer(serializers.ModelSerializer):
     class Meta:
         model = InternalEntity
-        fields = ['name']
+        fields = ['id','name']
 
 class InternalDepartmentSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = InternalDepartment
-        fields = ['name','internal_entity']
+        fields = ['id','name','internal_entity']
 
 class ExternalEntitySerializer(serializers.ModelSerializer):
     class Meta:
         model = ExternalEntity
-        fields = ['name']
+        fields = ['id','name']
 
 class ExternalDepartmentSerializer(serializers.ModelSerializer):
    
     class Meta:
         model = ExternalDepartment
-        fields = ['name','external_entity']
+        fields = ['id','name','external_entity']
 
 
 

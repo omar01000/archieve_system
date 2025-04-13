@@ -11,7 +11,7 @@ class CustomUser(AbstractUser):
     REQUIRED_FIELDS = ['username']  # عشان لما تنشئ سوبر يوزر
 
     def __str__(self):
-        return self.email
+        return self.username
 
 
 

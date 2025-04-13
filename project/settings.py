@@ -154,9 +154,8 @@ DJOSER = {
     'USER_CREATE_PASSWORD_RETYPE': True,
     'USER_ID_FIELD': 'id',
     'SERIALIZERS': {
-        'user_create': 'archievesystem.serializers.CustomUserCreateSerializer',
-        'user': 'archievesystem.serializers.CustomUserSerializer',
-        'current_user': 'archievesystem.serializers.CustomUserSerializer',
+        'user_create': None,
+        
     },
 }
 
