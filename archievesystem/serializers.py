@@ -50,11 +50,12 @@ class GetDocumentSerializer(serializers.ModelSerializer):
 class DocumentSerializer(serializers.ModelSerializer):
     
     uploaded_by = serializers.HiddenField(default=serializers.CurrentUserDefault())
+    last_modified_by = serializers.HiddenField(default=serializers.CurrentUserDefault())
     file = serializers.FileField(required=False)  # ← كده الملف مش مطلوب دايمًا
-
     class Meta:
         model = Document
         fields = '__all__'
+        
 
     def validate(self, data):
         entity_type = data.get('entity_type')

@@ -78,6 +78,7 @@ class DocumentViewSet(viewsets.ModelViewSet):
         'internal_entity', 'internal_department',
         'external_entity', 'external_department'
     ).all()
+    
     parser_classes = [MultiPartParser]
     permission_classes = [IsDocumentAccessible]
     filter_backends = [DjangoFilterBackend, SearchFilter]
