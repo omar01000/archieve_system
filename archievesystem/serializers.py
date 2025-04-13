@@ -40,7 +40,7 @@ class GetDocumentSerializer(serializers.ModelSerializer):
     external_entity = ExternalEntitySerializer()
     external_department = ExternalDepartmentSerializer()
     uploaded_by = serializers.StringRelatedField()
-
+    
     class Meta:
         model = Document
         fields = '__all__'

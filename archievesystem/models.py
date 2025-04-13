@@ -81,6 +81,18 @@ class Document(models.Model):
         related_name='uploaded_documents',
         verbose_name="المستخدم الذي رفع الملف"
     )
+    
+    last_modified_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='modified_documents',
+        verbose_name="آخر من عدّل الملف"
+    )
+    modified_at = models.DateTimeField(auto_now=True)
+
+    
 
     def __str__(self):
         return f"{self.document_number} - {self.title}"

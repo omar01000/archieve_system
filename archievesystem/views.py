@@ -49,9 +49,32 @@ class ExternalDepartmentViewSet(viewsets.ModelViewSet):
 
 
 
+from rest_framework import viewsets
+from rest_framework.parsers import MultiPartParser
+from rest_framework.decorators import action
+from rest_framework.response import Response
+from rest_framework.exceptions import PermissionDenied
+from django_filters.rest_framework import DjangoFilterBackend
+from rest_framework.filters import SearchFilter
+
+from .models import Document, InternalEntity, ExternalEntity, InternalDepartment, ExternalDepartment
+from .serializers import DocumentSerializer, GetDocumentSerializer, InternalEntitySerializer, ExternalEntitySerializer, InternalDepartmentSerializer, ExternalDepartmentSerializer
+from .permissions import IsDocumentAccessible
+from django.contrib.auth import get_user_model
+from rest_framework import serializers
+
+User = get_user_model()
+
+class UserSimpleSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = User
+        fields = ('id', 'username')
+
+
 class DocumentViewSet(viewsets.ModelViewSet):
     queryset = Document.objects.select_related(
         'uploaded_by',
+        'last_modified_by',
         'internal_entity', 'internal_department',
         'external_entity', 'external_department'
     ).all()
@@ -67,17 +90,27 @@ class DocumentViewSet(viewsets.ModelViewSet):
 
     def get_serializer_class(self):
         if self.request.method == 'GET':
-            return GetDocumentSerializer
+            class GetDocumentWithUsersSerializer(GetDocumentSerializer):
+                uploaded_by = UserSimpleSerializer(read_only=True)
+                last_modified_by = UserSimpleSerializer(read_only=True)
+            return GetDocumentWithUsersSerializer
         return DocumentSerializer
 
     def perform_create(self, serializer):
-        serializer.save(uploaded_by=self.request.user)
+        serializer.save(uploaded_by=self.request.user, last_modified_by=self.request.user)
 
     def perform_update(self, serializer):
         user = self.request.user
+
         if user.groups.filter(name='User').exists():
             raise PermissionDenied("المستخدم العادي لا يمكنه تعديل الملفات.")
-        serializer.save()
+
+        # تأمين: الحفاظ على من رفع الملف أول مرة
+        instance = self.get_object()
+        serializer.save(
+            last_modified_by=user,
+            uploaded_by=instance.uploaded_by  # ترجيع القيمة الأصلية
+    )
 
     def perform_destroy(self, instance):
         user = self.request.user
