@@ -73,6 +73,7 @@ class Document(models.Model):
     verbose_name=" النوع"
 )
     file = models.FileField(upload_to='documents/')
+    extracted_text = models.TextField(blank=True, null=True)
     uploaded_at = models.DateTimeField(auto_now_add=True)
     uploaded_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,

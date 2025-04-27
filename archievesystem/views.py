@@ -8,6 +8,7 @@ from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework.parsers import MultiPartParser
 from rest_framework.exceptions import PermissionDenied
 from rest_framework.filters import SearchFilter
+from rest_framework.exceptions import ValidationError
 
 from .models import Document, InternalEntity, InternalDepartment, ExternalEntity, ExternalDepartment
 from .serializers import (
@@ -62,7 +63,7 @@ from .serializers import DocumentSerializer, GetDocumentSerializer, InternalEnti
 from .permissions import IsDocumentAccessible
 from django.contrib.auth import get_user_model
 from rest_framework import serializers
-
+from ocr_app.views import UploadDocumentService, SearchDocumentsService
 User = get_user_model()
 
 class UserSimpleSerializer(serializers.ModelSerializer):
@@ -96,9 +97,33 @@ class DocumentViewSet(viewsets.ModelViewSet):
                 last_modified_by = UserSimpleSerializer(read_only=True)
             return GetDocumentWithUsersSerializer
         return DocumentSerializer
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        query = self.request.query_params.get('search', None)
 
+        if query:
+            search_service = SearchDocumentsService(query)
+            results, _ = search_service.search()
+            queryset = queryset.filter(id__in=[doc['id'] for doc in results])
+
+        return queryset
+    
     def perform_create(self, serializer):
-        serializer.save(uploaded_by=self.request.user, last_modified_by=self.request.user)
+        uploaded_file = self.request.FILES.get('file', None)
+
+        if not uploaded_file:
+            raise ValidationError({"error": "No file uploaded."})
+
+        upload_service = UploadDocumentService(file=uploaded_file, user=self.request.user)
+        document, extracted_text = upload_service.upload()
+
+        serializer.save(
+            uploaded_by=self.request.user,
+            last_modified_by=self.request.user,
+            file=document.file,
+            extracted_text=extracted_text
+        )
+
 
     def perform_update(self, serializer):
         user = self.request.user

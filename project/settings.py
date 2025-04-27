@@ -42,7 +42,8 @@ INSTALLED_APPS = [
     'rest_framework.authtoken',
     'djoser',
     'archievesystem',
-    'django_filters'
+    'django_filters',
+    'ocr_app',
 ]
 
 MIDDLEWARE = [
