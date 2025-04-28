@@ -7,6 +7,7 @@ from archievesystem.models import Document
 from collections import Counter
 from rapidfuzz import process  # Fast fuzzy matching library
 
+
 # Initialize FAISS & SBERT with correct embedding size
 sbert_model = SentenceTransformer("sentence-transformers/LaBSE")
 index = faiss.IndexFlatL2(768)  # Use 768 instead of 384
@@ -28,9 +29,9 @@ def index_documents():
             texts.append(doc.extracted_text)
             doc_ids.append(doc.id)
 
-            # Extract words and update frequency count
-            words = re.findall(r"\b\w+\b", doc.extracted_text.lower())
-            word_list.extend(words)
+        # Extract words and update frequency count
+        words = re.findall(r"\b\w+\b", doc.extracted_text.lower())
+        word_list.extend(words)
 
         if doc.file:
             words = re.findall(r"\b\w+\b", doc.file.name.lower())
@@ -58,6 +59,7 @@ def index_documents():
 def suggest_documents(query, top_n=5):
     """Suggests similar documents based on query using FAISS similarity search."""
     global index, documents_db
+    from django.core.files.storage import default_storage # Import here to avoid circular imports
 
     if index.ntotal == 0:
         index_documents()  # Rebuild FAISS index if empty
@@ -74,12 +76,13 @@ def suggest_documents(query, top_n=5):
 
     # Retrieve matching documents
     suggested_docs = [Document.objects.get(id=documents_db[i]) for i in indices[0] if i < len(documents_db)]
-    return [doc.get_file_url() for doc in suggested_docs]
+    return [default_storage.url(doc.file.name) for doc in suggested_docs] # Changed here
 
 
 def search_documents(query):
     """Searches documents by name and content, with spelling correction and suggestions."""
     global index, documents_db
+    from django.core.files.storage import default_storage # Import here to avoid circular imports
 
     if index.ntotal == 0:
         index_documents()  # Rebuild FAISS index if empty
@@ -99,4 +102,4 @@ def search_documents(query):
         return suggest_documents(query, top_n=5)
 
     # Step 3: Return file URLs of matched documents
-    return [doc.get_file_url() for doc in matched_documents]
+    return [default_storage.url(doc.file.name) for doc in matched_documents] # Changed here

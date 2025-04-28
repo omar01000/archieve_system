@@ -3,9 +3,10 @@ import os
 from django.conf import settings
 from django.core.files.storage import default_storage
 from .utils_ocr import extract_text_from_image, extract_text_from_pdf, extract_text_from_word
-from .utils_search import search_documents as utils_search_documents, suggest_documents as utils_suggest_documents
+from .utils_search import search_documents, suggest_documents
 from archievesystem.models import Document
-
+from rest_framework.views import APIView
+from rest_framework.response import Response
 class UploadDocumentService:
     def __init__(self, file, user):
         self.file = file
@@ -33,12 +34,17 @@ class UploadDocumentService:
         )
         return document, extracted_text
 
-class SearchDocumentsService:
-    def __init__(self, query):
-        self.query = query
+class SearchDocumentView(APIView):
+    def get(self, request):
+        query = request.GET.get("query", "")
+        if not query:
+            return Response({"error": "Query parameter is required"}, status=400)
 
-    def search(self):
-        results = utils_search_documents(self.query)
-        suggestions = utils_suggest_documents(self.query)
-        return results, suggestions
+        results = search_documents(query)  # Search for matching documents
+        suggestions = suggest_documents(query)  # Get Google-like autocomplete suggestions
 
+        return Response({
+            "query": query,
+            "suggestions": suggestions,  # Add word suggestions
+            "results": results
+        })

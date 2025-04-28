@@ -63,7 +63,7 @@ from .serializers import DocumentSerializer, GetDocumentSerializer, InternalEnti
 from .permissions import IsDocumentAccessible
 from django.contrib.auth import get_user_model
 from rest_framework import serializers
-from ocr_app.views import UploadDocumentService, SearchDocumentsService
+from ocr_app.views import UploadDocumentService
 User = get_user_model()
 
 class UserSimpleSerializer(serializers.ModelSerializer):
