@@ -110,21 +110,25 @@ class DocumentViewSet(viewsets.ModelViewSet):
     
     def perform_create(self, serializer):
         uploaded_file = self.request.FILES.get('file', None)
-
         if not uploaded_file:
             raise ValidationError({"error": "No file uploaded."})
 
-        upload_service = UploadDocumentService(file=uploaded_file, user=self.request.user)
-        document, extracted_text = upload_service.upload()
+        document_number = serializer.validated_data.get('document_number')
+        if not document_number or not document_number.strip():
+            raise ValidationError({"document_number": "Document number cannot be empty."})
 
+        if Document.objects.filter(document_number=document_number).exists():
+            raise ValidationError({"document_number": "A document with this number already exists."})
+
+        upload_service = UploadDocumentService(file=uploaded_file, user=self.request.user)
+        file_path, extracted_text = upload_service.upload()  # Modified method call
+        
         serializer.save(
             uploaded_by=self.request.user,
             last_modified_by=self.request.user,
-            file=document.file,
+            file=file_path,  # Use the file path directly
             extracted_text=extracted_text
         )
-
-
     def perform_update(self, serializer):
         user = self.request.user
 

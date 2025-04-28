@@ -11,12 +11,12 @@ class UploadDocumentService:
     def __init__(self, file, user):
         self.file = file
         self.user = user
-
-    def upload(self):
+    
+    def upload(self, document_number=None):  # Add document_number parameter
         # Save file
         relative_file_path = default_storage.save(f"documents/{self.file.name}", self.file)
         file_path = os.path.join(settings.MEDIA_ROOT, relative_file_path)
-
+        
         # Extract text
         if self.file.name.endswith(".pdf"):
             extracted_text = extract_text_from_pdf(file_path)
@@ -24,15 +24,9 @@ class UploadDocumentService:
             extracted_text = extract_text_from_word(file_path)
         else:
             extracted_text = extract_text_from_image(file_path)
-
-        # Save document
-        document = Document.objects.create(
-            file=relative_file_path,
-            extracted_text=extracted_text,
-            uploaded_by=self.user,
-            last_modified_by=self.user
-        )
-        return document, extracted_text
+        
+        # Don't create the document here, just return the file path and extracted text
+        return relative_file_path, extracted_text
 
 class SearchDocumentView(APIView):
     def get(self, request):

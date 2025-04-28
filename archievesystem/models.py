@@ -59,7 +59,7 @@ class Document(models.Model):
     ]
 
     title = models.CharField(max_length=100)
-    document_number = models.CharField(max_length=100, unique=True)
+    document_number = models.CharField(max_length=100, unique=True, null=False, blank=False)
     notes = models.TextField(null=True, blank=True)
     entity_type = models.CharField(max_length=20, choices=ENTITY_TYPE_CHOICES)
     internal_entity = models.ForeignKey(InternalEntity, on_delete=models.SET_NULL, null=True, blank=True)
