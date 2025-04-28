@@ -1,22 +1,22 @@
 import re
+import os
 import faiss
 from django.conf import settings
 from sentence_transformers import SentenceTransformer
 from archievesystem.models import Document
-
+from urllib.parse import unquote
+from django.core.files.storage import default_storage
 from collections import Counter
-from rapidfuzz import process  # Fast fuzzy matching library
+from rapidfuzz import process, fuzz
 
-
-# Initialize FAISS & SBERT with correct embedding size
+# Initialize FAISS & SBERT
 sbert_model = SentenceTransformer("sentence-transformers/LaBSE")
-index = faiss.IndexFlatL2(768)  # Use 768 instead of 384
+index = faiss.IndexFlatL2(768)
 documents_db = []  # Store document IDs
-word_frequency = Counter()  # Dictionary to store word frequency
-
+word_frequency = Counter()  # For word suggestions
 
 def index_documents():
-    """Indexes all documents using FAISS and SBERT & builds word suggestions."""
+    """Indexes all documents using FAISS and SBERT."""
     global index, documents_db, word_frequency
     documents = Document.objects.all()
 
@@ -25,81 +25,159 @@ def index_documents():
     word_list = []
 
     for doc in documents:
+        # Extract text for indexing
         if doc.extracted_text:
             texts.append(doc.extracted_text)
             doc_ids.append(doc.id)
 
-        # Extract words and update frequency count
-        words = re.findall(r"\b\w+\b", doc.extracted_text.lower())
-        word_list.extend(words)
-
+        # Extract words from extracted text and filename for suggestions
+        if doc.extracted_text:
+            words = re.findall(r"\b\w+\b", doc.extracted_text.lower())
+            word_list.extend(words)
+        
         if doc.file:
-            words = re.findall(r"\b\w+\b", doc.file.name.lower())
+            # Extract original filename part before the first underscore
+            original_name = os.path.basename(doc.file.name).split('_')[0]
+            words = re.findall(r"\b\w+\b", original_name.lower())
             word_list.extend(words)
 
     if not texts:
-        return  # Exit if no valid documents
+        return  # No documents to index
 
-    # Encode documents using LaBSE
+    # Encode documents
     embeddings = sbert_model.encode(texts, convert_to_numpy=True)
-
-    # Ensure embeddings are correctly shaped
     if embeddings.shape[1] != 768:
         embeddings = embeddings.reshape(-1, 768)
 
     # Reset FAISS index
     index = faiss.IndexFlatL2(768)
-    documents_db = doc_ids  # Store document IDs
+    documents_db = doc_ids
     index.add(embeddings)
 
-    # Build word frequency for suggestions
+    # Build word frequency
     word_frequency = Counter(word_list)
 
-
 def suggest_documents(query, top_n=5):
-    """Suggests similar documents based on query using FAISS similarity search."""
+    """Suggests similar documents using FAISS."""
     global index, documents_db
-    from django.core.files.storage import default_storage # Import here to avoid circular imports
-
     if index.ntotal == 0:
-        index_documents()  # Rebuild FAISS index if empty
+        index_documents()  # Rebuild if empty
 
-    # Encode the query
     query_embedding = sbert_model.encode([query], convert_to_numpy=True)
-
-    # Ensure query shape matches FAISS index
     if query_embedding.shape[1] != 768:
         query_embedding = query_embedding.reshape(-1, 768)
 
-    # Perform FAISS search
     _, indices = index.search(query_embedding, top_n)
+    suggested_docs = []
+    for i in indices[0]:
+        if i < len(documents_db):
+            try:
+                doc = Document.objects.get(id=documents_db[i])
+                suggested_docs.append(doc)
+            except Document.DoesNotExist:
+                continue
 
-    # Retrieve matching documents
-    suggested_docs = [Document.objects.get(id=documents_db[i]) for i in indices[0] if i < len(documents_db)]
-    return [default_storage.url(doc.file.name) for doc in suggested_docs] # Changed here
-
+    # Format results
+    results = []
+    for doc in suggested_docs:
+        original_name = os.path.basename(doc.file.name).split('_')[0]
+        results.append({
+            "file_path": default_storage.url(doc.file.name),
+            "name": unquote(original_name)
+        })
+    return results
 
 def search_documents(query):
-    """Searches documents by name and content, with spelling correction and suggestions."""
-    global index, documents_db
-    from django.core.files.storage import default_storage # Import here to avoid circular imports
-
-    if index.ntotal == 0:
-        index_documents()  # Rebuild FAISS index if empty
-
-    query_lower = query.lower()
-    word_pattern = rf"\b{re.escape(query_lower)}\b"
-
-    # Step 1: Check exact matches
-    matched_documents = [
-        doc for doc in Document.objects.all()
-        if (doc.extracted_text and re.search(word_pattern, doc.extracted_text, re.IGNORECASE))
-        or (doc.file and re.search(word_pattern, doc.file.name, re.IGNORECASE))
-    ]
-
-    # Step 2: If no exact match, suggest similar documents using FAISS
-    if not matched_documents:
-        return suggest_documents(query, top_n=5)
-
-    # Step 3: Return file URLs of matched documents
-    return [default_storage.url(doc.file.name) for doc in matched_documents] # Changed here
+    """A completely rebuilt search function that prioritizes exact matches and file extensions."""
+    query_lower = query.lower().strip()
+    
+    # Split the results into different relevance tiers
+    exact_matches = []
+    partial_matches = []
+    fallback_matches = []
+    
+    # Check if query contains an extension
+    file_extension = None
+    search_term = query_lower
+    if '.' in query_lower:
+        parts = query_lower.rsplit('.', 1)
+        search_term = parts[0]
+        file_extension = parts[1]
+    
+    # Process all documents
+    for doc in Document.objects.all():
+        if not doc.file:
+            continue
+        
+        # Get the complete filename and its parts
+        filename = os.path.basename(doc.file.name)
+        filename_lower = filename.lower()
+        
+        # Get base part and extension
+        doc_base = filename_lower
+        doc_ext = None
+        if '.' in filename_lower:
+            doc_base, doc_ext = filename_lower.rsplit('.', 1)
+        
+        # Extension filtering
+        if file_extension and (not doc_ext or doc_ext != file_extension):
+            continue
+            
+        # Find a clean name (without random suffixes)
+        clean_name = doc_base
+        if '_' in clean_name:
+            # Django often adds _RANDOM to uploaded files
+            clean_name = clean_name.split('_')[0]
+        elif ' ' in clean_name:
+            # Handle "file (1)" type names
+            clean_name = re.sub(r' \(\d+\)$', '', clean_name)
+        
+        # TIER 1: Exact matches in name
+        if search_term == clean_name or search_term in clean_name.split():
+            exact_matches.append(doc)
+            continue
+            
+        # TIER 2: Partial matches at word boundaries
+        if any(word.startswith(search_term) for word in clean_name.split()):
+            partial_matches.append(doc)
+            continue
+            
+        # TIER 3: Character-based partial matches
+        if len(search_term) >= 3 and search_term[:3] in clean_name:
+            partial_matches.append(doc)
+            continue
+            
+        # TIER 4: Fuzzy matching as last resort
+        fuzzy_score = fuzz.partial_ratio(search_term, clean_name)
+        if fuzzy_score > 70:
+            partial_matches.append(doc)
+            continue
+        elif fuzzy_score > 50:
+            fallback_matches.append(doc)
+            continue
+            
+        # TIER 5: Check extracted text
+        if doc.extracted_text and search_term in doc.extracted_text.lower():
+            fallback_matches.append(doc)
+    
+    # Combine results in order of relevance
+    combined_results = exact_matches + partial_matches + fallback_matches
+    
+    # Remove duplicates
+    seen = set()
+    matched_documents = [doc for doc in combined_results if doc.id not in seen and not seen.add(doc.id)]
+    
+    # Format results
+    results = []
+    for doc in matched_documents[:5]:  # Limit to top 5
+        display_name = os.path.basename(doc.file.name)
+        # Clean up the display name
+        if '_' in display_name:
+            display_name = display_name.split('_')[0]
+        
+        results.append({
+            "file_path": default_storage.url(doc.file.name),
+            "name": unquote(display_name)
+        })
+    
+    return results
