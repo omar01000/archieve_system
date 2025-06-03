@@ -39,6 +39,7 @@ class SearchDocumentView(APIView):
 
         return Response({
             "query": query,
-            "suggestions": suggestions,  # Add word suggestions
-            "results": results
+            "results": results,
+            "suggestions": suggestions  # Add word suggestions
+            
         })
