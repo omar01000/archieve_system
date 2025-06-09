@@ -140,3 +140,8 @@ AUTH_USER_MODEL = 'archievesystem.CustomUser'
 
 # Auto field
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
+
+
+CSRF_TRUSTED_ORIGINS = [
+    "https://archievesystem-production.up.railway.app"
+]
