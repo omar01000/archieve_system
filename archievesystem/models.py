@@ -59,7 +59,11 @@ class Document(models.Model):
     ]
 
     title = models.CharField(max_length=100)
+<<<<<<< HEAD
     document_number = models.CharField(max_length=100, unique=True, null=False, blank=False)
+=======
+    document_number = models.CharField(max_length=100, unique=True)
+>>>>>>> b7df3cba7f09027ca97d7736157df7ea805ba313
     notes = models.TextField(null=True, blank=True)
     entity_type = models.CharField(max_length=20, choices=ENTITY_TYPE_CHOICES)
     internal_entity = models.ForeignKey(InternalEntity, on_delete=models.SET_NULL, null=True, blank=True)
