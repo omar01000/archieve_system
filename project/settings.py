@@ -1,4 +1,3 @@
-<<<<<<< HEAD
 """
 Django settings for project project.
 
@@ -13,49 +12,32 @@ https://docs.djangoproject.com/en/5.1/ref/settings/
 
 from pathlib import Path
 from datetime import timedelta
-
-# Build paths inside the project like this: BASE_DIR / 'subdir'.
-BASE_DIR = Path(__file__).resolve().parent.parent
-
-
-# Quick-start development settings - unsuitable for production
-# See https://docs.djangoproject.com/en/5.1/howto/deployment/checklist/
-
-# SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = 'django-insecure-&c(5k+r2*wxd(sh^#jg13pmm*mx5@s*qkyu#hs6@i0ji%#eps*'
-
-# SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
-
-ALLOWED_HOSTS = []
-
-
-# Application definition
-
-=======
-from pathlib import Path
-from datetime import timedelta
 import os
 import dj_database_url
 from dotenv import load_dotenv
 
 load_dotenv()
 
+# Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-SECRET_KEY = os.environ.get("SECRET_KEY")
+# Quick-start development settings - unsuitable for production
+# See https://docs.djangoproject.com/en/5.1/howto/deployment/checklist/
 
-DEBUG = os.environ.get("DEBUG", "False") == "True"
+# SECURITY WARNING: keep the secret key used in production secret!
+SECRET_KEY = os.environ.get("SECRET_KEY", 'django-insecure-&c(5k+r2*wxd(sh^#jg13pmm*mx5@s*qkyu#hs6@i0ji%#eps*')
+
+# SECURITY WARNING: don't run with debug turned on in production!
+DEBUG = os.environ.get("DEBUG", "True") == "True"
 
 ALLOWED_HOSTS = [
     "archievesystem-production.up.railway.app",
     "localhost",
     "127.0.0.1",
-    "yourcustomdomain.com",  # ضيفه لو عندك دومين مخصص
+    "yourcustomdomain.com",  # Add if you have a custom domain
 ]
 
 # Application definition
->>>>>>> b7df3cba7f09027ca97d7736157df7ea805ba313
 INSTALLED_APPS = [
     'django.contrib.admin',
     'django.contrib.auth',
@@ -63,13 +45,6 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
-<<<<<<< HEAD
-    'rest_framework',
-    'rest_framework.authtoken',
-    'djoser',
-    'archievesystem',
-    'django_filters',
-=======
 
     # 3rd party
     'rest_framework',
@@ -81,16 +56,12 @@ INSTALLED_APPS = [
 
     # your apps
     'archievesystem',
->>>>>>> b7df3cba7f09027ca97d7736157df7ea805ba313
     'ocr_app',
 ]
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
-<<<<<<< HEAD
-=======
     'whitenoise.middleware.WhiteNoiseMiddleware',
->>>>>>> b7df3cba7f09027ca97d7736157df7ea805ba313
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
@@ -119,27 +90,27 @@ TEMPLATES = [
 
 WSGI_APPLICATION = 'project.wsgi.application'
 
-<<<<<<< HEAD
-
 # Database
-# https://docs.djangoproject.com/en/5.1/ref/settings/#databases
-DATABASES = {
-    
-        'default': {
-        'ENGINE': 'django.db.backends.postgresql_psycopg2',
-        'NAME': 'archievesystem123456',
-        'USER': 'postgres',
-        'PASSWORD': '1603',
-        'HOST':'localhost',
-        'PORT': '5432',
+# Use Railway DB in production, local PostgreSQL in development
+if os.environ.get("DATABASE_URL"):
+    DATABASES = {
+        'default': dj_database_url.config(default=os.environ.get("DATABASE_URL"))
     }
-    
-}
-
+else:
+    # Local development database
+    DATABASES = {
+        'default': {
+            'ENGINE': 'django.db.backends.postgresql_psycopg2',
+            'NAME': 'archievesystem123456',
+            'USER': 'postgres',
+            'PASSWORD': '1603',
+            'HOST': 'localhost',
+            'PORT': '5432',
+        }
+    }
 
 # Password validation
 # https://docs.djangoproject.com/en/5.1/ref/settings/#auth-password-validators
-
 AUTH_PASSWORD_VALIDATORS = [
     {
         'NAME': 'django.contrib.auth.password_validation.UserAttributeSimilarityValidator',
@@ -155,67 +126,37 @@ AUTH_PASSWORD_VALIDATORS = [
     },
 ]
 
-
 # Internationalization
 # https://docs.djangoproject.com/en/5.1/topics/i18n/
-
 LANGUAGE_CODE = 'en-us'
-
 TIME_ZONE = 'UTC'
-
 USE_I18N = True
-
 USE_TZ = True
-
 
 # Static files (CSS, JavaScript, Images)
 # https://docs.djangoproject.com/en/5.1/howto/static-files/
-
-STATIC_URL = 'static/'
-
-# Default primary key field type
-# https://docs.djangoproject.com/en/5.1/ref/settings/#default-auto-field
-
-DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
-
-
-
-=======
-# Database
-DATABASES = {
-    'default': dj_database_url.config(default=os.environ.get("DATABASE_URL"))
-}
-
-# Password validation
-AUTH_PASSWORD_VALIDATORS = [
-    {'NAME': 'django.contrib.auth.password_validation.UserAttributeSimilarityValidator'},
-    {'NAME': 'django.contrib.auth.password_validation.MinimumLengthValidator'},
-    {'NAME': 'django.contrib.auth.password_validation.CommonPasswordValidator'},
-    {'NAME': 'django.contrib.auth.password_validation.NumericPasswordValidator'},
-]
-
-# Internationalization
-LANGUAGE_CODE = 'en-us'
-TIME_ZONE = 'UTC'
-USE_I18N = True
-USE_TZ = True
-
-# Static files (CSS, JS)
 STATIC_URL = '/static/'
 STATIC_ROOT = BASE_DIR / 'staticfiles'
 STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
 
-# Media files (Cloudinary)
-DEFAULT_FILE_STORAGE = 'cloudinary_storage.storage.MediaCloudinaryStorage'
+# Media files - Use Cloudinary in production, local storage in development
+if os.environ.get("CLOUDINARY_CLOUD_NAME"):
+    DEFAULT_FILE_STORAGE = 'cloudinary_storage.storage.MediaCloudinaryStorage'
+    CLOUDINARY_STORAGE = {
+        'CLOUD_NAME': os.environ.get('CLOUDINARY_CLOUD_NAME'),
+        'API_KEY': os.environ.get('CLOUDINARY_API_KEY'),
+        'API_SECRET': os.environ.get('CLOUDINARY_API_SECRET'),
+    }
+else:
+    # Local development media files
+    MEDIA_URL = '/media/'
+    MEDIA_ROOT = BASE_DIR / 'media'
 
-CLOUDINARY_STORAGE = {
-    'CLOUD_NAME': os.environ.get('CLOUDINARY_CLOUD_NAME'),
-    'API_KEY': os.environ.get('CLOUDINARY_API_KEY'),
-    'API_SECRET': os.environ.get('CLOUDINARY_API_SECRET'),
-}
+# Default primary key field type
+# https://docs.djangoproject.com/en/5.1/ref/settings/#default-auto-field
+DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 # DRF
->>>>>>> b7df3cba7f09027ca97d7736157df7ea805ba313
 REST_FRAMEWORK = {
     'DATETIME_FORMAT': "%Y-%m-%d %H:%M:%S",
     'COERCE_DECIMAL_TO_STRING': False,
@@ -229,36 +170,13 @@ REST_FRAMEWORK = {
     'PAGE_SIZE': 20,
 }
 
-<<<<<<< HEAD
-=======
 # Djoser
->>>>>>> b7df3cba7f09027ca97d7736157df7ea805ba313
 DJOSER = {
     'LOGIN_FIELD': 'email',
     'USER_CREATE_PASSWORD_RETYPE': True,
     'USER_ID_FIELD': 'id',
     'SERIALIZERS': {
         'user_create': None,
-<<<<<<< HEAD
-        
-    },
-}
-
-
-SIMPLE_JWT = {
-    'AUTH_HEADER_TYPES': ('JWT',),
-    'ACCESS_TOKEN_LIFETIME': timedelta(days=1)
-}
-
-AUTH_USER_MODEL = 'archievesystem.CustomUser'
-
-
-DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
-
-
-MEDIA_URL = '/media/'
-MEDIA_ROOT = BASE_DIR / 'media'
-=======
     },
 }
 
@@ -271,11 +189,7 @@ SIMPLE_JWT = {
 # Custom User
 AUTH_USER_MODEL = 'archievesystem.CustomUser'
 
-# Auto field
-DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
-
-
+# CSRF trusted origins
 CSRF_TRUSTED_ORIGINS = [
     "https://archievesystem-production.up.railway.app"
 ]
->>>>>>> b7df3cba7f09027ca97d7736157df7ea805ba313

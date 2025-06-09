@@ -63,11 +63,10 @@ from .serializers import DocumentSerializer, GetDocumentSerializer, InternalEnti
 from .permissions import IsDocumentAccessible
 from django.contrib.auth import get_user_model
 from rest_framework import serializers
-<<<<<<< HEAD
+
 from ocr_app.views import UploadDocumentService
-=======
-from ocr_app.views import UploadDocumentService, SearchDocumentsService
->>>>>>> b7df3cba7f09027ca97d7736157df7ea805ba313
+
+from ocr_app.views import UploadDocumentService, SearchDocumentView
 User = get_user_model()
 
 class UserSimpleSerializer(serializers.ModelSerializer):
@@ -114,7 +113,7 @@ class DocumentViewSet(viewsets.ModelViewSet):
     
     def perform_create(self, serializer):
         uploaded_file = self.request.FILES.get('file', None)
-<<<<<<< HEAD
+
         if not uploaded_file:
             raise ValidationError({"error": "No file uploaded."})
 
@@ -126,31 +125,17 @@ class DocumentViewSet(viewsets.ModelViewSet):
             raise ValidationError({"document_number": "A document with this number already exists."})
 
         upload_service = UploadDocumentService(file=uploaded_file, user=self.request.user)
-        file_path, extracted_text = upload_service.upload()  # Modified method call
+        file_path, extracted_text = upload_service.upload()  # Corrected variable name
         
+        # Single save operation with correct parameters
         serializer.save(
             uploaded_by=self.request.user,
             last_modified_by=self.request.user,
-            file=file_path,  # Use the file path directly
-            extracted_text=extracted_text
-        )
-=======
-
-        if not uploaded_file:
-            raise ValidationError({"error": "No file uploaded."})
-
-        upload_service = UploadDocumentService(file=uploaded_file, user=self.request.user)
-        document, extracted_text = upload_service.upload()
-
-        serializer.save(
-            uploaded_by=self.request.user,
-            last_modified_by=self.request.user,
-            file=document.file,
-            extracted_text=extracted_text
+            file=file_path,  # String path is correct for FileField
+            extracted_text=extracted_text  # Use the extracted text from service
         )
 
 
->>>>>>> b7df3cba7f09027ca97d7736157df7ea805ba313
     def perform_update(self, serializer):
         user = self.request.user
 

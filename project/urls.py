@@ -21,8 +21,6 @@ urlpatterns = [
     path('admin/', admin.site.urls),
     path('',include('archievesystem.urls')),
     path('auth/', include('djoser.urls.jwt')),
-<<<<<<< HEAD
+
     path('ai/', include('ocr_app.urls')),
-=======
->>>>>>> b7df3cba7f09027ca97d7736157df7ea805ba313
 ]

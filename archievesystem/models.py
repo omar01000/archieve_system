@@ -14,9 +14,6 @@ class CustomUser(AbstractUser):
         return self.username
 
 
-
-
-
 # الجهات الداخلية
 class InternalEntity(models.Model):
     name = models.CharField(max_length=1000)
@@ -59,11 +56,7 @@ class Document(models.Model):
     ]
 
     title = models.CharField(max_length=100)
-<<<<<<< HEAD
     document_number = models.CharField(max_length=100, unique=True, null=False, blank=False)
-=======
-    document_number = models.CharField(max_length=100, unique=True)
->>>>>>> b7df3cba7f09027ca97d7736157df7ea805ba313
     notes = models.TextField(null=True, blank=True)
     entity_type = models.CharField(max_length=20, choices=ENTITY_TYPE_CHOICES)
     internal_entity = models.ForeignKey(InternalEntity, on_delete=models.SET_NULL, null=True, blank=True)
@@ -97,8 +90,6 @@ class Document(models.Model):
     )
     modified_at = models.DateTimeField(auto_now=True)
 
-    
-
     def __str__(self):
         return f"{self.document_number} - {self.title}"
 
@@ -113,8 +104,6 @@ class Document(models.Model):
                 raise ValidationError("يجب تحديد الجهة والإدارة الخارجية")
             if self.internal_entity or self.internal_department:
                 raise ValidationError("لا يجب تحديد جهة أو إدارة داخلية مع كيان خارجي")
-
-
 
         # مثال على التحقق من حجم الملف (اختياري)
         if self.file and self.file.size > 10 * 1024 * 1024:  # 10MB
