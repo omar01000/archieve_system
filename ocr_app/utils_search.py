@@ -8,15 +8,46 @@ from urllib.parse import unquote
 from django.core.files.storage import default_storage
 from collections import Counter
 from rapidfuzz import process, fuzz
+import numpy as np
 
-# Initialize FAISS & SBERT
-sbert_model = SentenceTransformer("sentence-transformers/LaBSE")
-index = faiss.IndexFlatL2(768)
+# Use a smaller, faster model (384 dimensions instead of 768)
+sbert_model = SentenceTransformer("sentence-transformers/all-MiniLM-L6-v2")
+
+# Use quantized FAISS index for smaller memory footprint
+index = None
 documents_db = []  # Store document IDs
 word_frequency = Counter()  # For word suggestions
 
+# Cache for frequently accessed embeddings
+embedding_cache = {}
+CACHE_SIZE = 1000
+
+def get_optimized_index(embeddings):
+    """Create optimized FAISS index based on data size."""
+    n_docs, dim = embeddings.shape
+    
+    if n_docs < 1000:
+        # For small datasets, use flat index
+        idx = faiss.IndexFlatL2(dim)
+    elif n_docs < 10000:
+        # For medium datasets, use IVF with fewer clusters
+        nlist = min(100, n_docs // 10)
+        quantizer = faiss.IndexFlatL2(dim)
+        idx = faiss.IndexIVFFlat(quantizer, dim, nlist)
+        idx.train(embeddings)
+    else:
+        # For large datasets, use IVF + PQ for compression
+        nlist = min(1000, n_docs // 20)
+        m = 8  # Number of subquantizers
+        bits = 8  # Bits per subquantizer
+        quantizer = faiss.IndexFlatL2(dim)
+        idx = faiss.IndexIVFPQ(quantizer, dim, nlist, m, bits)
+        idx.train(embeddings)
+    
+    return idx
+
 def index_documents():
-    """Indexes all documents using FAISS and SBERT."""
+    """Indexes all documents using optimized FAISS and smaller SBERT model."""
     global index, documents_db, word_frequency
     documents = Document.objects.all()
 
@@ -25,15 +56,17 @@ def index_documents():
     word_list = []
 
     for doc in documents:
-        # Extract text for indexing
+        # Extract text for indexing (truncate very long texts)
         if doc.extracted_text:
-            texts.append(doc.extracted_text)
+            # Limit text length to improve speed
+            text = doc.extracted_text[:2000]  # First 2000 chars
+            texts.append(text)
             doc_ids.append(doc.id)
 
         # Extract words from extracted text and filename for suggestions
         if doc.extracted_text:
             words = re.findall(r"\b\w+\b", doc.extracted_text.lower())
-            word_list.extend(words)
+            word_list.extend(words[:100])  # Limit words per document
         
         if doc.file:
             # Extract original filename part before the first underscore
@@ -44,33 +77,56 @@ def index_documents():
     if not texts:
         return  # No documents to index
 
-    # Encode documents
-    embeddings = sbert_model.encode(texts, convert_to_numpy=True)
-    if embeddings.shape[1] != 768:
-        embeddings = embeddings.reshape(-1, 768)
-
-    # Reset FAISS index
-    index = faiss.IndexFlatL2(768)
+    # Encode documents with batch processing for speed
+    batch_size = 32
+    all_embeddings = []
+    
+    for i in range(0, len(texts), batch_size):
+        batch = texts[i:i + batch_size]
+        embeddings = sbert_model.encode(batch, convert_to_numpy=True, show_progress_bar=False)
+        all_embeddings.append(embeddings)
+    
+    embeddings = np.vstack(all_embeddings)
+    
+    # Use optimized index
+    index = get_optimized_index(embeddings)
     documents_db = doc_ids
     index.add(embeddings)
 
-    # Build word frequency
+    # Build word frequency (limit size)
     word_frequency = Counter(word_list)
+    # Keep only top 5000 most frequent words
+    if len(word_frequency) > 5000:
+        word_frequency = Counter(dict(word_frequency.most_common(5000)))
 
 def suggest_documents(query, top_n=5):
-    """Suggests similar documents using FAISS."""
-    global index, documents_db
-    if index.ntotal == 0:
+    """Suggests similar documents using optimized FAISS."""
+    global index, documents_db, embedding_cache
+    
+    if index is None or index.ntotal == 0:
         index_documents()  # Rebuild if empty
 
-    query_embedding = sbert_model.encode([query], convert_to_numpy=True)
-    if query_embedding.shape[1] != 768:
-        query_embedding = query_embedding.reshape(-1, 768)
+    # Check cache first
+    cache_key = query.lower().strip()
+    if cache_key in embedding_cache:
+        query_embedding = embedding_cache[cache_key]
+    else:
+        query_embedding = sbert_model.encode([query], convert_to_numpy=True, show_progress_bar=False)
+        # Cache management
+        if len(embedding_cache) >= CACHE_SIZE:
+            # Remove oldest entry
+            embedding_cache.pop(next(iter(embedding_cache)))
+        embedding_cache[cache_key] = query_embedding
 
-    _, indices = index.search(query_embedding, top_n)
+    # Search with optimized parameters
+    if hasattr(index, 'nprobe'):
+        index.nprobe = min(10, index.nlist)  # Limit search scope for speed
+    
+    _, indices = index.search(query_embedding, min(top_n, index.ntotal))
+    
     suggested_docs = []
     for i in indices[0]:
-        if i < len(documents_db):
+        if i != -1 and i < len(documents_db):
             try:
                 doc = Document.objects.get(id=documents_db[i])
                 suggested_docs.append(doc)
@@ -88,8 +144,12 @@ def suggest_documents(query, top_n=5):
     return results
 
 def search_documents(query):
-    """A completely rebuilt search function that prioritizes exact matches and file extensions."""
+    """Optimized search function with early exits and limited processing."""
     query_lower = query.lower().strip()
+    
+    # Early exit for very short queries
+    if len(query_lower) < 2:
+        return []
     
     # Split the results into different relevance tiers
     exact_matches = []
@@ -104,11 +164,18 @@ def search_documents(query):
         search_term = parts[0]
         file_extension = parts[1]
     
-    # Process all documents
-    for doc in Document.objects.all():
+    # Limit document processing for speed
+    documents = Document.objects.all()[:1000]  # Process max 1000 docs
+    
+    # Process documents with early exits
+    for doc in documents:
         if not doc.file:
             continue
         
+        # Stop if we have enough results
+        if len(exact_matches) >= 10:
+            break
+            
         # Get the complete filename and its parts
         filename = os.path.basename(doc.file.name)
         filename_lower = filename.lower()
@@ -126,10 +193,8 @@ def search_documents(query):
         # Find a clean name (without random suffixes)
         clean_name = doc_base
         if '_' in clean_name:
-            # Django often adds _RANDOM to uploaded files
             clean_name = clean_name.split('_')[0]
         elif ' ' in clean_name:
-            # Handle "file (1)" type names
             clean_name = re.sub(r' \(\d+\)$', '', clean_name)
         
         # TIER 1: Exact matches in name
@@ -142,23 +207,32 @@ def search_documents(query):
             partial_matches.append(doc)
             continue
             
-        # TIER 3: Character-based partial matches
+        # TIER 3: Character-based partial matches (only for longer terms)
         if len(search_term) >= 3 and search_term[:3] in clean_name:
             partial_matches.append(doc)
             continue
             
-        # TIER 4: Fuzzy matching as last resort
-        fuzzy_score = fuzz.partial_ratio(search_term, clean_name)
-        if fuzzy_score > 70:
-            partial_matches.append(doc)
-            continue
-        elif fuzzy_score > 50:
-            fallback_matches.append(doc)
+        # Skip expensive fuzzy matching and text search if we have enough results
+        if len(exact_matches) + len(partial_matches) >= 5:
             continue
             
-        # TIER 5: Check extracted text
-        if doc.extracted_text and search_term in doc.extracted_text.lower():
-            fallback_matches.append(doc)
+        # TIER 4: Limited fuzzy matching
+        if len(search_term) >= 3:
+            fuzzy_score = fuzz.partial_ratio(search_term, clean_name)
+            if fuzzy_score > 80:  # Higher threshold for speed
+                partial_matches.append(doc)
+                continue
+            elif fuzzy_score > 70:
+                fallback_matches.append(doc)
+                continue
+        
+        # TIER 5: Check extracted text (limited)
+        if (len(exact_matches) + len(partial_matches) < 3 and 
+            doc.extracted_text and len(search_term) >= 3):
+            # Only check first 500 chars of extracted text
+            text_snippet = doc.extracted_text[:500].lower()
+            if search_term in text_snippet:
+                fallback_matches.append(doc)
     
     # Combine results in order of relevance
     combined_results = exact_matches + partial_matches + fallback_matches
@@ -181,3 +255,19 @@ def search_documents(query):
         })
     
     return results
+
+# Optional: Add periodic cleanup function
+def cleanup_cache():
+    """Clean up cache periodically to free memory."""
+    global embedding_cache
+    if len(embedding_cache) > CACHE_SIZE // 2:
+        # Keep only half of the cache
+        items = list(embedding_cache.items())
+        embedding_cache = dict(items[len(items)//2:])
+
+# Optional: Lazy loading function
+def ensure_index_loaded():
+    """Ensure index is loaded only when needed."""
+    global index
+    if index is None or index.ntotal == 0:
+        index_documents()
