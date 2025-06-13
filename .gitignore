@@ -1,0 +1,55 @@
+venv/
+documents/
+media/
+*.pdf
+*.png
+*.jpg
+# Python
+__pycache__/
+*.py[cod]
+*.sqlite3
+
+# Virtual environment
+venv/
+ENV/
+env/
+
+# Django media files (when using local storage for testing)
+media/
+documents/
+
+# Cloudinary local cache (لو فيه أي حاجة اتعملها temporary cache)
+.cloudinary/
+
+# VS Code settings (اختياري)
+.vscode/
+
+# System files
+.DS_Store
+Thumbs.db
+
+# Compiled files
+*.log
+*.pot
+*.pyc
+*.pyo
+*.exe
+*.so
+*.dll
+*.o
+*.a
+*.dylib
+
+# File uploads
+*.jpg
+*.jpeg
+*.png
+*.gif
+*.pdf
+
+# Environment variables
+.env
+
+# Docker (لو بتستخدم Docker)
+*.pid
+*.pid.lock
