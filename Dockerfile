@@ -14,6 +14,9 @@ RUN apt-get update && apt-get install -y \
     libxrender-dev \
     libmagic1 \
     gcc \
+    libleptonica-dev \
+    libtesseract-dev \
+    poppler-utils \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app

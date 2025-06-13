@@ -10,6 +10,9 @@ import logging
 from typing import Union, List, Optional, Tuple
 import os
 from pathlib import Path
+import platform
+import subprocess
+import sys
 
 # Configure logging
 logging.basicConfig(
@@ -17,6 +20,43 @@ logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
+
+def check_system_dependencies() -> bool:
+    """
+    Check if all required system dependencies are installed.
+    
+    Returns:
+        bool: True if all dependencies are installed, False otherwise
+    """
+    if platform.system() != 'Linux':
+        logger.warning("System dependencies check is only supported on Linux")
+        return True
+        
+    required_packages = [
+        'tesseract-ocr',
+        'libleptonica-dev',
+        'libtesseract-dev',
+        'poppler-utils'
+    ]
+    
+    missing_packages = []
+    
+    for package in required_packages:
+        try:
+            subprocess.run(['dpkg', '-s', package], 
+                         check=True, 
+                         stdout=subprocess.PIPE, 
+                         stderr=subprocess.PIPE)
+        except subprocess.CalledProcessError:
+            missing_packages.append(package)
+    
+    if missing_packages:
+        logger.error(f"Missing system dependencies: {', '.join(missing_packages)}")
+        logger.error("Please install them using:")
+        logger.error(f"sudo apt-get install -y {' '.join(missing_packages)}")
+        return False
+        
+    return True
 
 def validate_tesseract() -> bool:
     """
@@ -26,15 +66,25 @@ def validate_tesseract() -> bool:
         bool: True if Tesseract is properly configured, False otherwise
     """
     try:
+        # Check system dependencies first
+        if not check_system_dependencies():
+            return False
+            
         version = pytesseract.get_tesseract_version()
         languages = pytesseract.get_languages()
+        
         if 'ara' not in languages:
             logger.error("Arabic language data not found in Tesseract")
+            logger.error("Please install it using: sudo apt-get install tesseract-ocr-ara")
             return False
+            
         logger.info(f"Tesseract version: {version}, Available languages: {languages}")
         return True
     except Exception as e:
         logger.error(f"Tesseract validation failed: {str(e)}")
+        if platform.system() == 'Linux':
+            logger.error("Please ensure Tesseract is properly installed:")
+            logger.error("sudo apt-get install -y tesseract-ocr tesseract-ocr-ara")
         return False
 
 def clean_arabic_text(text: str) -> str:
