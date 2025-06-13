@@ -12,21 +12,34 @@ class UploadDocumentService:
         self.file = file
         self.user = user
     
-    def upload(self, document_number=None):  # Add document_number parameter
-        # Save file
-        relative_file_path = default_storage.save(f"documents/{self.file.name}", self.file)
-        file_path = os.path.join(settings.MEDIA_ROOT, relative_file_path)
-        
-        # Extract text
-        if self.file.name.endswith(".pdf"):
-            extracted_text = extract_text_from_pdf(file_path)
-        elif self.file.name.endswith(".docx"):
-            extracted_text = extract_text_from_word(file_path)
-        else:
-            extracted_text = extract_text_from_image(file_path)
-        
-        # Don't create the document here, just return the file path and extracted text
-        return relative_file_path, extracted_text
+
+    
+    def upload(self, document_number=None):
+        import tempfile
+        import os
+
+        extracted_text = ""
+
+        # 👇 نحفظ الملف مؤقتًا، سواء PDF أو صورة
+        with tempfile.NamedTemporaryFile(delete=False, suffix=os.path.splitext(self.file.name)[-1]) as tmp_file:
+            for chunk in self.file.chunks():
+                tmp_file.write(chunk)
+            tmp_file_path = tmp_file.name
+
+        # نستدعي الدالة المناسبة حسب نوع الملف
+        try:
+            if self.file.name.endswith(".pdf"):
+                extracted_text = extract_text_from_pdf(tmp_file_path)
+            elif self.file.name.endswith(".docx"):
+                extracted_text = extract_text_from_word(tmp_file_path)
+            else:
+                extracted_text = extract_text_from_image(tmp_file_path)
+        finally:
+            # 👈 امسح الملف بعد ما تخلص
+            os.remove(tmp_file_path)
+
+        return None, extracted_text
+
 
 class SearchDocumentView(APIView):
     def get(self, request):
