@@ -193,6 +193,3 @@ AUTH_USER_MODEL = 'archievesystem.CustomUser'
 CSRF_TRUSTED_ORIGINS = [
     "https://archievesystem-production.up.railway.app"
 ]
-
-
-print("Cloudinary Name:", os.environ.get("CLOUDINARY_CLOUD_NAME"))
