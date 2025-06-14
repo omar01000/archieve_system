@@ -10,264 +10,556 @@ from collections import Counter
 from rapidfuzz import process, fuzz
 import numpy as np
 
-# Use a smaller, faster model (384 dimensions instead of 768)
-sbert_model = SentenceTransformer("sentence-transformers/all-MiniLM-L6-v2")
+# Use multilingual model that supports Arabic and English well
+sbert_model = SentenceTransformer("sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2")
 
-# Use quantized FAISS index for smaller memory footprint
+# Optimized globals
 index = None
-documents_db = []  # Store document IDs
-word_frequency = Counter()  # For word suggestions
+documents_db = []
+word_frequency = Counter()
 
-# Cache for frequently accessed embeddings
+# Smaller cache for speed
 embedding_cache = {}
-CACHE_SIZE = 1000
+CACHE_SIZE = 300
 
-def get_optimized_index(embeddings):
-    """Create optimized FAISS index based on data size."""
-    n_docs, dim = embeddings.shape
+def get_original_filename(stored_name):
+    """Extract original filename without timestamp or extension"""
+    # Remove storage path if present
+    filename = os.path.basename(stored_name)
     
-    if n_docs < 1000:
-        # For small datasets, use flat index
-        idx = faiss.IndexFlatL2(dim)
-    elif n_docs < 10000:
-        # For medium datasets, use IVF with fewer clusters
-        nlist = min(100, n_docs // 10)
-        quantizer = faiss.IndexFlatL2(dim)
-        idx = faiss.IndexIVFFlat(quantizer, dim, nlist)
-        idx.train(embeddings)
-    else:
-        # For large datasets, use IVF + PQ for compression
-        nlist = min(1000, n_docs // 20)
-        m = 8  # Number of subquantizers
-        bits = 8  # Bits per subquantizer
-        quantizer = faiss.IndexFlatL2(dim)
-        idx = faiss.IndexIVFPQ(quantizer, dim, nlist, m, bits)
-        idx.train(embeddings)
+    # Remove timestamp prefix (format: timestamp_originalname.ext)
+    if '_' in filename:
+        # Split only once to preserve underscores in original name
+        parts = filename.split('_', 1)
+        if len(parts) > 1 and parts[0].isdigit():
+            filename = parts[1]
     
-    return idx
-
-def index_documents():
-    """Indexes all documents using optimized FAISS and smaller SBERT model."""
-    global index, documents_db, word_frequency
-    documents = Document.objects.all()
-
-    texts = []
-    doc_ids = []
-    word_list = []
-
-    for doc in documents:
-        # Extract text for indexing (truncate very long texts)
-        if doc.extracted_text:
-            # Limit text length to improve speed
-            text = doc.extracted_text[:2000]  # First 2000 chars
-            texts.append(text)
-            doc_ids.append(doc.id)
-
-        # Extract words from extracted text and filename for suggestions
-        if doc.extracted_text:
-            words = re.findall(r"\b\w+\b", doc.extracted_text.lower())
-            word_list.extend(words[:100])  # Limit words per document
-        
-        if doc.file:
-            # Extract original filename part before the first underscore
-            original_name = os.path.basename(doc.file.name).split('_')[0]
-            words = re.findall(r"\b\w+\b", original_name.lower())
-            word_list.extend(words)
-
-    if not texts:
-        return  # No documents to index
-
-    # Encode documents with batch processing for speed
-    batch_size = 32
-    all_embeddings = []
+    # Remove file extension
+    if '.' in filename:
+        filename = filename.rsplit('.', 1)[0]
     
-    for i in range(0, len(texts), batch_size):
-        batch = texts[i:i + batch_size]
-        embeddings = sbert_model.encode(batch, convert_to_numpy=True, show_progress_bar=False)
-        all_embeddings.append(embeddings)
-    
-    embeddings = np.vstack(all_embeddings)
-    
-    # Use optimized index
-    index = get_optimized_index(embeddings)
-    documents_db = doc_ids
-    index.add(embeddings)
+    return unquote(filename)
 
-    # Build word frequency (limit size)
-    word_frequency = Counter(word_list)
-    # Keep only top 5000 most frequent words
-    if len(word_frequency) > 5000:
-        word_frequency = Counter(dict(word_frequency.most_common(5000)))
-
-def suggest_documents(query, top_n=5):
-    """Suggests similar documents using optimized FAISS."""
-    global index, documents_db, embedding_cache
+def advanced_normalize_text(text):
+    """Arabic text normalization with special character preservation"""
+    if not text:
+        return ""
     
-    if index is None or index.ntotal == 0:
-        index_documents()  # Rebuild if empty
-
-    # Check cache first
-    cache_key = query.lower().strip()
-    if cache_key in embedding_cache:
-        query_embedding = embedding_cache[cache_key]
-    else:
-        query_embedding = sbert_model.encode([query], convert_to_numpy=True, show_progress_bar=False)
-        # Cache management
-        if len(embedding_cache) >= CACHE_SIZE:
-            # Remove oldest entry
-            embedding_cache.pop(next(iter(embedding_cache)))
-        embedding_cache[cache_key] = query_embedding
-
-    # Search with optimized parameters
-    if hasattr(index, 'nprobe'):
-        index.nprobe = min(10, index.nlist)  # Limit search scope for speed
+    # Multiple URL decoding attempts
+    for _ in range(3):
+        try:
+            if '%' in text:
+                decoded = unquote(text)
+                if decoded != text:
+                    text = decoded
+                else:
+                    break
+        except:
+            break
     
-    _, indices = index.search(query_embedding, min(top_n, index.ntotal))
+    # Extended Arabic diacritics removal
+    text = re.sub(r'[\u064B-\u0652\u0670\u0640\u06D6-\u06ED\u08F0-\u08FF]', '', text)
     
-    suggested_docs = []
-    for i in indices[0]:
-        if i != -1 and i < len(documents_db):
-            try:
-                doc = Document.objects.get(id=documents_db[i])
-                suggested_docs.append(doc)
-            except Document.DoesNotExist:
-                continue
-
-    # Format results
-    results = []
-    for doc in suggested_docs:
-        original_name = os.path.basename(doc.file.name).split('_')[0]
-        results.append({
-            "file_path": default_storage.url(doc.file.name),
-            "name": unquote(original_name)
-        })
-    return results
-
-def search_documents(query):
-    """Optimized search function with early exits and limited processing."""
-    query_lower = query.lower().strip()
+    # Comprehensive Arabic letter normalizations
+    arabic_normalizations = {
+        'أ': 'ا', 'إ': 'ا', 'آ': 'ا', 'ٱ': 'ا',
+        'ة': 'ه', 
+        'ى': 'ي', 'ئ': 'ي', 'ؤ': 'و',
+        'ك': 'ك', 'ی': 'ي', 'ے': 'ي',
+        '\u200c': '', '\u200d': '', '\u200e': '', '\u200f': '',
+    }
     
-    # Early exit for very short queries
-    if len(query_lower) < 2:
+    for old_char, new_char in arabic_normalizations.items():
+        text = text.replace(old_char, new_char)
+    
+    # Convert to lowercase
+    text = text.lower()
+    
+    # Preserve underscores and hyphens in Arabic phrases
+    text = re.sub(r'[\|/\\]+', ' ', text)
+    
+    # Remove extra punctuation but preserve Arabic-English-numbers
+    text = re.sub(r'[^\w\s\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF_-]', ' ', text)
+    
+    # Normalize multiple spaces
+    text = re.sub(r'\s+', ' ', text).strip()
+    
+    return text
+
+def extract_arabic_variants(word):
+    """Generate common Arabic spelling variants"""
+    if not word or len(word) < 2:
+        return [word]
+    
+    variants = [word]
+    
+    # Common Arabic letter substitutions
+    substitutions = {
+        'ا': ['أ', 'إ', 'آ'],
+        'ي': ['ى', 'ئ'],
+        'ه': ['ة'],
+        'ة': ['ه'],
+        'و': ['ؤ'],
+        'ت': ['ة'],
+    }
+    
+    # Generate variants by substituting letters
+    for original, replacements in substitutions.items():
+        if original in word:
+            for replacement in replacements:
+                variants.append(word.replace(original, replacement))
+    
+    # Generate phrase variants with different separators
+    if '_' in word or '-' in word:
+        variants.append(word.replace('_', '-'))
+        variants.append(word.replace('-', '_'))
+        variants.append(word.replace('_', ' '))
+        variants.append(word.replace('-', ' '))
+    
+    # Remove duplicates while preserving order
+    seen = set()
+    return [v for v in variants if v not in seen and v not in seen and not seen.add(v)][:10]
+
+def enhanced_extract_search_terms(text, max_terms=40):
+    """Search term extraction with Arabic phrase support"""
+    if not text:
         return []
     
-    # Split the results into different relevance tiers
-    exact_matches = []
-    partial_matches = []
-    fallback_matches = []
+    normalized = advanced_normalize_text(text)
     
-    # Check if query contains an extension
-    file_extension = None
-    search_term = query_lower
-    if '.' in query_lower:
-        parts = query_lower.rsplit('.', 1)
-        search_term = parts[0]
-        file_extension = parts[1]
+    # Extract Arabic words and phrases
+    arabic_pattern = r'[\w\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF_-]{2,}'
+    arabic_terms = re.findall(arabic_pattern, normalized)
     
-    # Limit document processing for speed
-    documents = Document.objects.all()[:1000]  # Process max 1000 docs
+    # Extract English words
+    english_words = re.findall(r'[a-z]{2,}', normalized)
     
-    # Process documents with early exits
-    for doc in documents:
-        if not doc.file:
-            continue
-        
-        # Stop if we have enough results
-        if len(exact_matches) >= 10:
-            break
-            
-        # Get the complete filename and its parts
-        filename = os.path.basename(doc.file.name)
-        filename_lower = filename.lower()
-        
-        # Get base part and extension
-        doc_base = filename_lower
-        doc_ext = None
-        if '.' in filename_lower:
-            doc_base, doc_ext = filename_lower.rsplit('.', 1)
-        
-        # Extension filtering
-        if file_extension and (not doc_ext or doc_ext != file_extension):
-            continue
-            
-        # Find a clean name (without random suffixes)
-        clean_name = doc_base
-        if '_' in clean_name:
-            clean_name = clean_name.split('_')[0]
-        elif ' ' in clean_name:
-            clean_name = re.sub(r' \(\d+\)$', '', clean_name)
-        
-        # TIER 1: Exact matches in name
-        if search_term == clean_name or search_term in clean_name.split():
-            exact_matches.append(doc)
-            continue
-            
-        # TIER 2: Partial matches at word boundaries
-        if any(word.startswith(search_term) for word in clean_name.split()):
-            partial_matches.append(doc)
-            continue
-            
-        # TIER 3: Character-based partial matches (only for longer terms)
-        if len(search_term) >= 3 and search_term[:3] in clean_name:
-            partial_matches.append(doc)
-            continue
-            
-        # Skip expensive fuzzy matching and text search if we have enough results
-        if len(exact_matches) + len(partial_matches) >= 5:
-            continue
-            
-        # TIER 4: Limited fuzzy matching
-        if len(search_term) >= 3:
-            fuzzy_score = fuzz.partial_ratio(search_term, clean_name)
-            if fuzzy_score > 80:  # Higher threshold for speed
-                partial_matches.append(doc)
-                continue
-            elif fuzzy_score > 70:
-                fallback_matches.append(doc)
-                continue
-        
-        # TIER 5: Check extracted text (limited)
-        if (len(exact_matches) + len(partial_matches) < 3 and 
-            doc.extracted_text and len(search_term) >= 3):
-            # Only check first 500 chars of extracted text
-            text_snippet = doc.extracted_text[:500].lower()
-            if search_term in text_snippet:
-                fallback_matches.append(doc)
+    # Extract numbers
+    numbers = re.findall(r'\d+', normalized)
     
-    # Combine results in order of relevance
-    combined_results = exact_matches + partial_matches + fallback_matches
+    # Process Arabic terms with variants
+    all_terms = []
+    
+    # Add original Arabic terms and variants
+    for term in arabic_terms:
+        if re.search(r'[\u0600-\u06FF]', term):
+            all_terms.append(term)
+            variants = extract_arabic_variants(term)
+            all_terms.extend(variants[1:5])
+    
+    # Add English terms
+    all_terms.extend([word for word in english_words if len(word) >= 2])
+    
+    # Add numbers
+    all_terms.extend(numbers)
     
     # Remove duplicates
     seen = set()
-    matched_documents = [doc for doc in combined_results if doc.id not in seen and not seen.add(doc.id)]
+    return [t.strip() for t in all_terms if t and t not in seen and not seen.add(t)][:max_terms]
+
+def arabic_similarity_score(query_term, filename_term):
+    """Similarity scoring with exact match priority"""
+    if not query_term or not filename_term:
+        return 0
     
-    # Format results
-    results = []
-    for doc in matched_documents[:5]:  # Limit to top 5
-        display_name = os.path.basename(doc.file.name)
-        # Clean up the display name
-        if '_' in display_name:
-            display_name = display_name.split('_')[0]
+    # Exact match gets highest score
+    if query_term == filename_term:
+        return 100
+    
+    # Exact match with different separators
+    if query_term.replace('_', '-') == filename_term.replace('_', '-'):
+        return 95
+    if query_term.replace('_', ' ') == filename_term.replace('_', ' '):
+        return 90
+    
+    # Phrase matching
+    if '_' in query_term or '-' in query_term:
+        # Check for phrase as substring
+        if query_term in filename_term:
+            return 90
+        if filename_term in query_term:
+            return 85
         
-        results.append({
-            "file_path": default_storage.url(doc.file.name),
-            "name": unquote(display_name)
-        })
+        # Check phrase variants
+        variants = extract_arabic_variants(query_term)
+        for variant in variants:
+            if variant == filename_term:
+                return 88
+            if variant in filename_term:
+                return 80
     
-    return results
+    # Check if both are Arabic
+    query_is_arabic = bool(re.search(r'[\u0600-\u06FF]', query_term))
+    filename_is_arabic = bool(re.search(r'[\u0600-\u06FF]', filename_term))
+    
+    if not (query_is_arabic or filename_is_arabic):
+        return fuzz.ratio(query_term, filename_term)
+    
+    # Generate variants for both terms
+    query_variants = extract_arabic_variants(query_term)
+    filename_variants = extract_arabic_variants(filename_term)
+    
+    # Check variants against each other
+    max_score = 0
+    for q_var in query_variants:
+        for f_var in filename_variants:
+            score = fuzz.ratio(q_var, f_var)
+            max_score = max(max_score, score)
+    
+    # Substring matching
+    if len(query_term) >= 3:
+        if query_term in filename_term:
+            max_score = max(max_score, 85)
+        if filename_term in query_term:
+            max_score = max(max_score, 80)
+    
+    return max_score
 
-# Optional: Add periodic cleanup function
-def cleanup_cache():
-    """Clean up cache periodically to free memory."""
-    global embedding_cache
-    if len(embedding_cache) > CACHE_SIZE // 2:
-        # Keep only half of the cache
-        items = list(embedding_cache.items())
-        embedding_cache = dict(items[len(items)//2:])
+def get_fast_index(embeddings):
+    """Create optimized FAISS index"""
+    n_docs, dim = embeddings.shape
+    
+    if n_docs < 500:
+        return faiss.IndexFlatL2(dim)
+    elif n_docs < 2000:
+        nlist = max(8, n_docs // 30)
+        quantizer = faiss.IndexFlatL2(dim)
+        index = faiss.IndexIVFFlat(quantizer, dim, nlist)
+        index.train(embeddings)
+        return index
+    else:
+        nlist = max(16, min(128, n_docs // 25))
+        m = 8
+        quantizer = faiss.IndexFlatL2(dim)
+        index = faiss.IndexIVFPQ(quantizer, dim, nlist, m, 8)
+        index.train(embeddings)
+        return index
 
-# Optional: Lazy loading function
-def ensure_index_loaded():
-    """Ensure index is loaded only when needed."""
-    global index
-    if index is None or index.ntotal == 0:
+def index_documents():
+    """Enhanced indexing with original filename preservation"""
+    global index, documents_db, word_frequency
+    
+    documents = Document.objects.all()
+    texts = []
+    doc_ids = []
+    all_terms = []
+
+    for doc in documents:
+        doc_content = ""
+        filename_terms = []
+        
+        # Process filename
+        if doc.file:
+            # Get original filename without timestamp/extension
+            original_name = get_original_filename(doc.file.name)
+            doc_content = original_name
+            
+            # Add filename terms with variants
+            filename_terms = enhanced_extract_search_terms(
+                advanced_normalize_text(original_name), 
+                25
+            )
+            all_terms.extend(filename_terms)
+            
+            # Boost Arabic terms
+            arabic_terms = [t for t in filename_terms if re.search(r'[\u0600-\u06FF]', t)]
+            all_terms.extend(arabic_terms * 3)
+        
+        # Process content
+        if doc.extracted_text:
+            # Take larger content sample for Arabic
+            text_sample = doc.extracted_text[:3000]
+            text_normalized = advanced_normalize_text(text_sample)
+            doc_content = f"{doc_content} {text_normalized}".strip()
+            
+            # Add text terms with variants
+            text_terms = enhanced_extract_search_terms(text_normalized, 40)
+            all_terms.extend(text_terms)
+            
+            # Boost Arabic content terms
+            arabic_terms = [t for t in text_terms if re.search(r'[\u0600-\u06FF]', t)]
+            all_terms.extend(arabic_terms * 2)
+        
+        if doc_content:
+            texts.append(doc_content)
+            doc_ids.append(doc.id)
+
+    if not texts:
+        return
+
+    # Create embeddings
+    batch_size = 12
+    all_embeddings = []
+    
+    try:
+        for i in range(0, len(texts), batch_size):
+            batch = texts[i:i + batch_size]
+            embeddings = sbert_model.encode(
+                batch, 
+                convert_to_numpy=True, 
+                show_progress_bar=False,
+                normalize_embeddings=True
+            )
+            all_embeddings.append(embeddings)
+        
+        if all_embeddings:
+            embeddings = np.vstack(all_embeddings)
+            
+            # Create fast index
+            index = get_fast_index(embeddings)
+            documents_db = doc_ids
+            index.add(embeddings)
+            
+            # Build term frequency
+            word_frequency = Counter(all_terms)
+            if len(word_frequency) > 3000:
+                word_frequency = Counter(dict(word_frequency.most_common(3000)))
+                
+    except Exception as e:
+        print(f"Indexing error: {e}")
+        index = None
+
+def suggest_documents(query, top_n=4):
+    """Document suggestions with original filename"""
+    global index, documents_db, embedding_cache
+    
+    if index is None or (hasattr(index, 'ntotal') and index.ntotal == 0):
         index_documents()
+        if index is None or index.ntotal == 0:
+            return []
+
+    # Preprocess query
+    processed_query = advanced_normalize_text(query)
+    if len(processed_query) < 2:
+        return []
+
+    # Check cache
+    if processed_query in embedding_cache:
+        query_embedding = embedding_cache[processed_query]
+    else:
+        try:
+            query_embedding = sbert_model.encode(
+                [processed_query], 
+                convert_to_numpy=True, 
+                show_progress_bar=False,
+                normalize_embeddings=True
+            )
+            
+            # Manage cache
+            if len(embedding_cache) >= CACHE_SIZE:
+                embedding_cache = dict(list(embedding_cache.items())[CACHE_SIZE//2:])
+            
+            embedding_cache[processed_query] = query_embedding
+        except:
+            return []
+
+    # Perform search
+    try:
+        if hasattr(index, 'nprobe'):
+            index.nprobe = min(6, getattr(index, 'nlist', 6))
+        
+        search_count = min(top_n * 4, index.ntotal)
+        _, indices = index.search(query_embedding, search_count)
+        
+        results = []
+        for i in indices[0]:
+            if i != -1 and i < len(documents_db):
+                try:
+                    doc = Document.objects.get(id=documents_db[i])
+                    # Get original filename without timestamp/extension
+                    original_name = get_original_filename(doc.file.name)
+                    results.append({
+                        "file_path": default_storage.url(doc.file.name),
+                        "name": original_name
+                    })
+                    if len(results) >= top_n:
+                        break
+                except Document.DoesNotExist:
+                    continue
+        
+        return results
+    except:
+        return []
+
+def search_documents(query):
+    """High-accuracy search with original filename results"""
+    if not query or len(query.strip()) < 2:
+        return []
+    
+    # Preserve original query for exact matching
+    raw_query = query
+    processed_query = advanced_normalize_text(query)
+    if not processed_query:
+        return []
+    
+    # Extract terms with variants
+    query_terms = enhanced_extract_search_terms(processed_query, 12)
+    if not query_terms:
+        return []
+    
+    # Detect Arabic content
+    has_arabic = any(re.search(r'[\u0600-\u06FF]', t) for t in query_terms)
+    
+    # File extension handling
+    file_extension = None
+    if '.' in query and not has_arabic:
+        parts = query.strip().lower().rsplit('.', 1)
+        if len(parts) == 2 and len(parts[1]) <= 4:
+            file_extension = parts[1]
+            query_terms = enhanced_extract_search_terms(parts[0], 8)
+    
+    # Enhanced scoring
+    scored_results = []
+    seen_ids = set()
+    
+    # Process more documents for Arabic queries
+    documents = Document.objects.all()[:1500 if has_arabic else 800]
+    
+    for doc in documents:
+        if len(scored_results) >= (25 if has_arabic else 15):
+            break
+            
+        if not doc.file or doc.id in seen_ids:
+            continue
+            
+        # Get original filename without timestamp/extension
+        original_name = get_original_filename(doc.file.name)
+        stored_filename = os.path.basename(doc.file.name)
+        
+        # Extension filtering
+        if file_extension and not stored_filename.lower().endswith(f'.{file_extension}'):
+            continue
+        
+        # Prepare for matching
+        filename_normalized = advanced_normalize_text(original_name)
+        filename_terms = enhanced_extract_search_terms(filename_normalized, 25)
+        
+        # Start scoring
+        score = 0
+        
+        # 1. Exact match bonus (highest priority)
+        if raw_query.lower() == original_name.lower():
+            score += 1000  # Massive bonus for exact match
+        
+        # 2. Original filename contains raw query
+        elif raw_query.lower() in original_name.lower():
+            score += 200
+        
+        # 3. Normalized exact match
+        elif processed_query == filename_normalized:
+            score += 150
+        
+        # 4. Phrase matching
+        if ('_' in raw_query or '-' in raw_query) and raw_query in original_name:
+            score += 100
+        
+        # 5. Term-based matching
+        for query_term in query_terms:
+            best_match_score = 0
+            for filename_term in filename_terms:
+                similarity = arabic_similarity_score(query_term, filename_term)
+                best_match_score = max(best_match_score, similarity)
+            
+            # Score conversion
+            if best_match_score >= 90:
+                score += 40
+            elif best_match_score >= 80:
+                score += 30
+            elif best_match_score >= 70:
+                score += 20
+            elif best_match_score >= 60:
+                score += 15
+            elif best_match_score >= 50:
+                score += 10
+        
+        # 6. Content matching
+        if doc.extracted_text:
+            content_sample = doc.extracted_text[:1500]
+            normalized_content = advanced_normalize_text(content_sample)
+            
+            # Raw query in content
+            if raw_query in content_sample:
+                score += 50
+            
+            # Normalized query in content
+            elif processed_query in normalized_content:
+                score += 40
+            
+            # Terms in content
+            for term in query_terms:
+                if term in normalized_content:
+                    score += 8 if re.search(r'[\u0600-\u06FF]', term) else 5
+        
+        # Threshold filtering
+        min_score = 20 if has_arabic else 25
+        if score >= min_score:
+            scored_results.append((doc, score, original_name))
+            seen_ids.add(doc.id)
+    
+    # Sort results by score
+    scored_results.sort(key=lambda x: x[1], reverse=True)
+    max_results = 20 if has_arabic else 12
+    
+    # Return results with original filename
+    return [{
+        "file_path": default_storage.url(doc.file.name),
+        "name": name
+    } for doc, score, name in scored_results[:max_results]]
+
+def get_word_suggestions(query, limit=8):
+    """Arabic-aware word suggestions"""
+    if not query or len(query) < 2:
+        return []
+    
+    processed_query = advanced_normalize_text(query)
+    if not processed_query:
+        return []
+    
+    suggestions = []
+    
+    if word_frequency:
+        has_arabic = bool(re.search(r'[\u0600-\u06FF]', processed_query))
+        candidate_limit = limit * 6
+        
+        # Get initial matches
+        matches = process.extract(
+            processed_query, 
+            word_frequency.keys(), 
+            limit=candidate_limit,
+            scorer=fuzz.ratio
+        )
+        
+        # Process matches
+        arabic_suggestions = []
+        other_suggestions = []
+        
+        for word, score in matches:
+            if score < 30:
+                continue
+                
+            if has_arabic and re.search(r'[\u0600-\u06FF]', word):
+                arabic_score = arabic_similarity_score(processed_query, word)
+                if arabic_score >= 40:
+                    arabic_suggestions.append((word, arabic_score))
+            elif not has_arabic:
+                other_suggestions.append((word, score))
+        
+        # Sort suggestions
+        arabic_suggestions.sort(key=lambda x: x[1], reverse=True)
+        other_suggestions.sort(key=lambda x: x[1], reverse=True)
+        
+        # Combine results
+        suggestions = [w for w, _ in arabic_suggestions[:limit]]
+        if len(suggestions) < limit:
+            suggestions.extend([w for w, _ in other_suggestions[:limit - len(suggestions)]])
+    
+    return suggestions[:limit]
+
+# Initialize index on startup
+def ensure_index():
+    global index
+    if index is None or (hasattr(index, 'ntotal') and index.ntotal == 0):
+        index_documents()
+
+# Initial indexing
+ensure_index()
