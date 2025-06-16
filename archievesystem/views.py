@@ -26,6 +26,10 @@ class InternalEntityViewSet(viewsets.ModelViewSet):
     queryset = InternalEntity.objects.all()
     serializer_class = InternalEntitySerializer
     permission_classes = [IsAdminOrReadOnly]
+    filter_backends = [DjangoFilterBackend, SearchFilter]
+    filterset_fields = ['name']
+    search_fields = ['name']
+    
 
     
 
@@ -33,18 +37,24 @@ class InternalDepartmentViewSet(viewsets.ModelViewSet):
     queryset = InternalDepartment.objects.all()
     serializer_class = InternalDepartmentSerializer
     permission_classes = [IsAdminOrReadOnly]
+    filterset_fields = ['name','internal_entity']
+    search_fields = ['name','internal_entity']
 
 
 class ExternalEntityViewSet(viewsets.ModelViewSet):
     queryset = ExternalEntity.objects.all()
     serializer_class = ExternalEntitySerializer
     permission_classes = [IsAdminOrReadOnly]
+    filterset_fields = ['name']
+    search_fields = ['name']
 
 
 class ExternalDepartmentViewSet(viewsets.ModelViewSet):
     queryset = ExternalDepartment.objects.all()
     serializer_class = ExternalDepartmentSerializer
     permission_classes = [IsAdminOrReadOnly]
+    filterset_fields = ['name','external_entity']
+    search_fields = ['name','external_entity']
 
 
 
