@@ -1,0 +1,6 @@
+venv/
+documents/
+media/
+*.pdf
+*.png
+*.jpg
