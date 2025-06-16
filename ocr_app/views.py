@@ -12,20 +12,25 @@ class UploadDocumentService:
         self.file = file
         self.user = user
     
-    def upload(self, document_number=None):  # Add document_number parameter
-        # Save file
-        relative_file_path = default_storage.save(f"documents/{self.file.name}", self.file)
+    def upload(self):
+        # Clean filename to avoid URL encoding issues
+        clean_filename = self.file.name.replace(' ', '_').replace('%', '_')
+        
+        # Save file and get relative path only
+        relative_file_path = default_storage.save(f"documents/{clean_filename}", self.file)
+        
+        # Build full path for text extraction
         file_path = os.path.join(settings.MEDIA_ROOT, relative_file_path)
         
         # Extract text
-        if self.file.name.endswith(".pdf"):
+        if self.file.name.lower().endswith(".pdf"):
             extracted_text = extract_text_from_pdf(file_path)
-        elif self.file.name.endswith(".docx"):
+        elif self.file.name.lower().endswith(".docx"):
             extracted_text = extract_text_from_word(file_path)
         else:
             extracted_text = extract_text_from_image(file_path)
         
-        # Don't create the document here, just return the file path and extracted text
+        # Return relative path for database storage
         return relative_file_path, extracted_text
 
 class SearchDocumentView(APIView):

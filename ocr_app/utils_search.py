@@ -40,6 +40,35 @@ def get_original_filename(stored_name):
     
     return unquote(filename)
 
+def get_file_url_info(doc):
+    """Get comprehensive file URL information"""
+    if not doc.file:
+        return {
+            'file_path': None,
+            'url': None,
+            'download_url': None,
+            'media_url': None
+        }
+    
+    # Base file path from storage
+    file_path = default_storage.url(doc.file.name)
+    
+    # Clean URL without encoding issues
+    clean_url = file_path.replace('%20', ' ')
+    
+    # Media URL (direct access)
+    media_url = f"{settings.MEDIA_URL}{doc.file.name}"
+    
+    # Download URL (if you have a download endpoint)
+    download_url = f"/api/documents/{doc.id}/download/"
+    
+    return {
+        'file_path': file_path,  # Original encoded path
+        'url': clean_url,        # Clean URL for display
+        'download_url': download_url,  # API download endpoint
+        'media_url': media_url   # Direct media URL
+    }
+
 def advanced_normalize_text(text):
     """Arabic text normalization with special character preservation"""
     if not text:
@@ -320,7 +349,7 @@ def index_documents():
         index = None
 
 def suggest_documents(query, top_n=4):
-    """Document suggestions with original filename"""
+    """Document suggestions with comprehensive URL info"""
     global index, documents_db, embedding_cache
     
     if index is None or (hasattr(index, 'ntotal') and index.ntotal == 0):
@@ -368,9 +397,16 @@ def suggest_documents(query, top_n=4):
                     doc = Document.objects.get(id=documents_db[i])
                     # Get original filename without timestamp/extension
                     original_name = get_original_filename(doc.file.name)
+                    # Get comprehensive URL info
+                    url_info = get_file_url_info(doc)
+                    
                     results.append({
-                        "file_path": default_storage.url(doc.file.name),
-                        "name": original_name
+                        "id": doc.id,
+                        "name": original_name,
+                        "file_path": url_info['file_path'],
+                        "url": url_info['url'],
+                        "download_url": url_info['download_url'],
+                        "media_url": url_info['media_url']
                     })
                     if len(results) >= top_n:
                         break
@@ -382,7 +418,7 @@ def suggest_documents(query, top_n=4):
         return []
 
 def search_documents(query):
-    """High-accuracy search with original filename results"""
+    """High-accuracy search with comprehensive URL information"""
     if not query or len(query.strip()) < 2:
         return []
     
@@ -500,11 +536,21 @@ def search_documents(query):
     scored_results.sort(key=lambda x: x[1], reverse=True)
     max_results = 20 if has_arabic else 12
     
-    # Return results with original filename
-    return [{
-        "file_path": default_storage.url(doc.file.name),
-        "name": name
-    } for doc, score, name in scored_results[:max_results]]
+    # Return results with comprehensive URL information
+    results = []
+    for doc, score, name in scored_results[:max_results]:
+        url_info = get_file_url_info(doc)
+        results.append({
+            "id": doc.id,
+            "name": name,
+            "file_path": url_info['file_path'],
+            "url": url_info['url'],
+            "download_url": url_info['download_url'],
+            "media_url": url_info['media_url'],
+            "score": score  # Include score for debugging
+        })
+    
+    return results
 
 def get_word_suggestions(query, limit=8):
     """Arabic-aware word suggestions"""

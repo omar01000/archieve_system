@@ -63,7 +63,8 @@ from .serializers import DocumentSerializer, GetDocumentSerializer, InternalEnti
 from .permissions import IsDocumentAccessible
 from django.contrib.auth import get_user_model
 from rest_framework import serializers
-
+import os
+from django.conf import settings
 from ocr_app.views import UploadDocumentService
 
 from ocr_app.views import UploadDocumentService, SearchDocumentView
@@ -110,7 +111,6 @@ class DocumentViewSet(viewsets.ModelViewSet):
             queryset = queryset.filter(id__in=[doc['id'] for doc in results])
 
         return queryset
-    
     def perform_create(self, serializer):
         uploaded_file = self.request.FILES.get('file', None)
 
@@ -125,17 +125,15 @@ class DocumentViewSet(viewsets.ModelViewSet):
             raise ValidationError({"document_number": "A document with this number already exists."})
 
         upload_service = UploadDocumentService(file=uploaded_file, user=self.request.user)
-        file_path, extracted_text = upload_service.upload()  # Corrected variable name
-        
-        # Single save operation with correct parameters
+        relative_file_path, extracted_text = upload_service.upload()
+
+        # Save with relative path only
         serializer.save(
             uploaded_by=self.request.user,
             last_modified_by=self.request.user,
-            file=file_path,  # String path is correct for FileField
-            extracted_text=extracted_text  # Use the extracted text from service
+            file=relative_file_path,  # Now stored as 'documents/filename.ext'
+            extracted_text=extracted_text
         )
-
-
     def perform_update(self, serializer):
         user = self.request.user
 
