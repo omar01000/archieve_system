@@ -10,7 +10,7 @@ from .models import (
 )
 
 # =========================
-# Users
+# Users1
 # =========================
 @admin.register(CustomUser)
 class CustomUserAdmin(UserAdmin):
