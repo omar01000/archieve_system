@@ -141,16 +141,20 @@ class DocumentViewSet(viewsets.ModelViewSet):
         if Document.objects.filter(document_number=document_number).exists():
             raise ValidationError({"document_number": "A document with this number already exists."})
 
+        # رفع الملف واستخراج النص
         upload_service = UploadDocumentService(file=uploaded_file, user=self.request.user)
-        file_path, extracted_text = upload_service.upload()
+        file_obj, extracted_text = upload_service.upload()  # ← لاحظ التغيير هنا
 
+        # الحفظ داخل قاعدة البيانات - Cloudinary هيتكفل بالرابط
         serializer.save(
             uploaded_by=self.request.user,
             last_modified_by=self.request.user,
-            file=file_path,  # ده هيكون مسار Cloudinary
+            file=file_obj,  # ← ده المفتاح الحقيقي لتفعيل Cloudinary
             extracted_text=extracted_text
         )
 
+
+        
     def perform_update(self, serializer):
         user = self.request.user
 

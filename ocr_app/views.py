@@ -34,7 +34,9 @@ class UploadDocumentService:
                 extracted_text = extract_text_from_image(f)
 
         # 3. رجّع اسم الملف (Cloudinary storage هيتصرف)
-        return saved_path, extracted_text
+        return self.file, extracted_text
+
+    
 
 
 class SearchDocumentView(APIView):
