@@ -18,29 +18,26 @@ from .utils_ocr import extract_text_from_image, extract_text_from_pdf, extract_t
 from django.core.files.storage import default_storage
 from .utils_ocr import extract_text_from_pdf, extract_text_from_word, extract_text_from_image
 
+from .utils_ocr import extract_text_from_pdf, extract_text_from_word, extract_text_from_image
+
 class UploadDocumentService:
     def __init__(self, file, user):
         self.file = file
         self.user = user
 
     def upload(self):
-        saved_path = default_storage.save(f"documents/{self.file.name}", self.file)
+        f = self.file  # ده كائن InMemoryUploadedFile من request.FILES
 
-        # افتح الملف من Cloudinary
-        cloud_file = default_storage.open(saved_path, 'rb')
-
-        # استخدم الملف المفتوح في استخراج النص
-        if saved_path.lower().endswith('.pdf'):
-            extracted_text = extract_text_from_pdf(cloud_file)
-        elif saved_path.lower().endswith('.docx'):
-            extracted_text = extract_text_from_word(cloud_file)
+        # OCR فقط – بدون أي عملية save يدوي
+        if f.name.lower().endswith('.pdf'):
+            extracted_text = extract_text_from_pdf(f)
+        elif f.name.lower().endswith('.docx'):
+            extracted_text = extract_text_from_word(f)
         else:
-            extracted_text = extract_text_from_image(cloud_file)
+            extracted_text = extract_text_from_image(f)
 
-        # ❗رجّع الملف كـ File وليس فقط المسار
-        return cloud_file, extracted_text
+        return f, extracted_text  # ← كائن الملف نفسه
 
-    
 
 
 class SearchDocumentView(APIView):

@@ -128,6 +128,7 @@ class DocumentViewSet(viewsets.ModelViewSet):
         return queryset
     
     
+   
     def perform_create(self, serializer):
         uploaded_file = self.request.FILES.get('file')
 
@@ -141,16 +142,18 @@ class DocumentViewSet(viewsets.ModelViewSet):
         if Document.objects.filter(document_number=document_number).exists():
             raise ValidationError({"document_number": "A document with this number already exists."})
 
-        # ✅ ده اللي اتعدّل
+        # ✅ استخدم الملف كما هو - بدون save يدوي
         upload_service = UploadDocumentService(file=uploaded_file, user=self.request.user)
         file_obj, extracted_text = upload_service.upload()
 
+        # هنا Cloudinary هيتعامل مع الملف
         serializer.save(
             uploaded_by=self.request.user,
             last_modified_by=self.request.user,
             file=file_obj,
             extracted_text=extracted_text
         )
+
 
         
     def perform_update(self, serializer):
