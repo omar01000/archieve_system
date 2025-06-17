@@ -15,26 +15,30 @@ from rest_framework.response import Response
 from django.core.files.storage import default_storage
 from .utils_ocr import extract_text_from_image, extract_text_from_pdf, extract_text_from_word
 
+from django.core.files.storage import default_storage
+from .utils_ocr import extract_text_from_image, extract_text_from_pdf, extract_text_from_word
+
 class UploadDocumentService:
     def __init__(self, file, user):
         self.file = file
         self.user = user
 
     def upload(self):
-        # 1. احفظ الملف عبر default_storage (ده Cloudinary)
+        # 1) ارفع الملف فعليًّا على Cloudinary
         saved_path = default_storage.save(f"documents/{self.file.name}", self.file)
+        # saved_path يكون بشكل:  documents/abc.pdf  (Cloudinary يخزّنه بالفعل)
 
-        # 2. افتح الملف من Cloudinary باستخدام default_storage (كـ stream)
+        # 2) استخراج النص من الـ stream المُخزَّن
         with default_storage.open(saved_path, 'rb') as f:
-            if self.file.name.lower().endswith(".pdf"):
+            if saved_path.lower().endswith('.pdf'):
                 extracted_text = extract_text_from_pdf(f)
-            elif self.file.name.lower().endswith(".docx"):
+            elif saved_path.lower().endswith('.docx'):
                 extracted_text = extract_text_from_word(f)
             else:
                 extracted_text = extract_text_from_image(f)
 
-        # 3. رجّع اسم الملف (Cloudinary storage هيتصرف)
-        return self.file, extracted_text
+        # 3) أَعِد المسار (path) لا الملف الأصلي
+        return saved_path, extracted_text
 
     
 
