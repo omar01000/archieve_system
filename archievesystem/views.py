@@ -129,8 +129,8 @@ class DocumentViewSet(viewsets.ModelViewSet):
     
     
     def perform_create(self, serializer):
-        
         uploaded_file = self.request.FILES.get('file')
+
         if not uploaded_file:
             raise ValidationError({"error": "No file uploaded."})
 
@@ -141,17 +141,16 @@ class DocumentViewSet(viewsets.ModelViewSet):
         if Document.objects.filter(document_number=document_number).exists():
             raise ValidationError({"document_number": "A document with this number already exists."})
 
-        # رفع الملف واستخراج النص
+        # ✅ ده اللي اتعدّل
         upload_service = UploadDocumentService(file=uploaded_file, user=self.request.user)
-        file_path, extracted_text = upload_service.upload()   # ← يستقبل المسار
+        file_obj, extracted_text = upload_service.upload()
 
         serializer.save(
             uploaded_by=self.request.user,
             last_modified_by=self.request.user,
-            file=file_path,          # ← النقطة الحاسمة
+            file=file_obj,
             extracted_text=extracted_text
         )
-
 
         
     def perform_update(self, serializer):

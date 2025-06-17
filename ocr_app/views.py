@@ -16,7 +16,7 @@ from django.core.files.storage import default_storage
 from .utils_ocr import extract_text_from_image, extract_text_from_pdf, extract_text_from_word
 
 from django.core.files.storage import default_storage
-from .utils_ocr import extract_text_from_image, extract_text_from_pdf, extract_text_from_word
+from .utils_ocr import extract_text_from_pdf, extract_text_from_word, extract_text_from_image
 
 class UploadDocumentService:
     def __init__(self, file, user):
@@ -24,21 +24,21 @@ class UploadDocumentService:
         self.user = user
 
     def upload(self):
-        # 1) ارفع الملف فعليًّا على Cloudinary
         saved_path = default_storage.save(f"documents/{self.file.name}", self.file)
-        # saved_path يكون بشكل:  documents/abc.pdf  (Cloudinary يخزّنه بالفعل)
 
-        # 2) استخراج النص من الـ stream المُخزَّن
-        with default_storage.open(saved_path, 'rb') as f:
-            if saved_path.lower().endswith('.pdf'):
-                extracted_text = extract_text_from_pdf(f)
-            elif saved_path.lower().endswith('.docx'):
-                extracted_text = extract_text_from_word(f)
-            else:
-                extracted_text = extract_text_from_image(f)
+        # افتح الملف من Cloudinary
+        cloud_file = default_storage.open(saved_path, 'rb')
 
-        # 3) أَعِد المسار (path) لا الملف الأصلي
-        return saved_path, extracted_text
+        # استخدم الملف المفتوح في استخراج النص
+        if saved_path.lower().endswith('.pdf'):
+            extracted_text = extract_text_from_pdf(cloud_file)
+        elif saved_path.lower().endswith('.docx'):
+            extracted_text = extract_text_from_word(cloud_file)
+        else:
+            extracted_text = extract_text_from_image(cloud_file)
+
+        # ❗رجّع الملف كـ File وليس فقط المسار
+        return cloud_file, extracted_text
 
     
 
