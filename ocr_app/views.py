@@ -1,4 +1,3 @@
-# services/document_services.py
 import os
 from django.conf import settings
 from django.core.files.storage import default_storage
@@ -18,7 +17,7 @@ class UploadDocumentService:
     def upload(self):
         f = self.file
         
-        # Save the file to storage first
+        # Save the file to storage directly (without any subdirectory)
         file_name = default_storage.save(f.name, f)
         
         # Get the absolute path for OCR processing
@@ -62,8 +61,9 @@ class DocumentUploadView(APIView):
         )
         document.save()
         
-        # Build absolute URL for the uploaded file
-        file_url = request.build_absolute_uri(default_storage.url(file_name))
+        # Build absolute URL for the uploaded file - now it will be at the root
+        base_url = request.build_absolute_uri('/')[:-1]  # Remove trailing slash
+        file_url = f"{base_url}/{os.path.basename(file_name)}"
         
         return Response({
             "message": "File uploaded successfully",
@@ -86,9 +86,7 @@ class SearchDocumentView(APIView):
         
         def make_absolute(url):
             if url and not url.startswith(('http://', 'https://')):
-                # Ensure consistent /media/ prefix
-                if not url.startswith('/media/'):
-                    url = f"/media/{url.lstrip('/')}"
+                # Our direct_media_url is like "/filename.pdf", so we just prepend base_url
                 return f"{base_url}{url}"
             return url
 
@@ -96,11 +94,18 @@ class SearchDocumentView(APIView):
         for result in results:
             if 'direct_media_url' in result:
                 result['direct_media_url'] = make_absolute(result['direct_media_url'])
+            # Also update other URLs if needed
+            for key in ['file_path', 'url', 'download_url', 'media_url']:
+                if key in result:
+                    result[key] = make_absolute(result[key])
         
         # Process suggestions
         for suggestion in suggestions:
             if 'direct_media_url' in suggestion:
                 suggestion['direct_media_url'] = make_absolute(suggestion['direct_media_url'])
+            for key in ['file_path', 'url', 'download_url', 'media_url']:
+                if key in suggestion:
+                    suggestion[key] = make_absolute(suggestion[key])
 
         return Response({
             "query": query,

@@ -1,4 +1,3 @@
-# services/utils_search.py
 import re
 import os
 import faiss
@@ -10,7 +9,6 @@ from django.core.files.storage import default_storage
 from collections import Counter
 from rapidfuzz import process, fuzz
 import numpy as np
-from rest_framework import serializers
 
 # Use multilingual model that supports Arabic and English well
 sbert_model = SentenceTransformer("sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2")
@@ -53,23 +51,25 @@ def get_file_url_info(doc):
             'direct_media_url': None
         }
     
-    # Get properly encoded URL using Django's storage
-    file_path = default_storage.url(doc.file.name)
-    
-    # Build direct media URL with proper encoding
+    # Get the filename only
     base_name = os.path.basename(doc.file.name)
     encoded_name = quote(base_name)  # Properly encode special characters
-    direct_media_url = f"{settings.MEDIA_URL}documents/{encoded_name}"
     
-    # Download URL
-    download_url = f"/api/documents/{doc.id}/download/"
+    # Build the direct URL at the root
+    direct_media_url = f"/{encoded_name}"
+    
+    # The default storage URL (which uses MEDIA_URL) might be set to root? 
+    # But we are changing the way we serve, so we might not use MEDIA_URL? 
+    # We'll keep the other URLs as the default_storage.url for now, but note that we are going to change the serving to root.
+    # Alternatively, we can set all to the root style? But the 'download_url' is an API endpoint.
+    file_url = default_storage.url(doc.file.name)  # This will be MEDIA_URL + doc.file.name
     
     return {
-        'file_path': file_path,
-        'url': file_path,  # Use storage URL for consistency
-        'download_url': download_url,
-        'media_url': f"{settings.MEDIA_URL}{doc.file.name}",
-        'direct_media_url': direct_media_url
+        'file_path': file_url,
+        'url': file_url,
+        'download_url': f"/api/documents/{doc.id}/download/",
+        'media_url': file_url,
+        'direct_media_url': direct_media_url   # This is the root path
     }
 
 def advanced_normalize_text(text):
@@ -406,10 +406,6 @@ def suggest_documents(query, top_n=4):
                     results.append({
                         "id": doc.id,
                         "name": original_name,
-                        "file_path": url_info['file_path'],
-                        "url": url_info['url'],
-                        "download_url": url_info['download_url'],
-                        "media_url": url_info['media_url'],
                         "direct_media_url": url_info['direct_media_url'],
                     })
                     if len(results) >= top_n:
@@ -547,10 +543,6 @@ def search_documents(query):
         results.append({
             "id": doc.id,
             "name": name,
-            "file_path": url_info['file_path'],
-            "url": url_info['url'],
-            "download_url": url_info['download_url'],
-            "media_url": url_info['media_url'],
             "direct_media_url": url_info['direct_media_url'],
             "score": score  # Include score for debugging
         })
