@@ -5,6 +5,16 @@ from rest_framework.parsers import MultiPartParser
 from rest_framework.filters import SearchFilter
 from django_filters.rest_framework import DjangoFilterBackend
 
+
+
+from django.contrib.auth import get_user_model
+from rest_framework import serializers
+import os
+from django.conf import settings
+from ocr_app.views import UploadDocumentService
+from ocr_app.utils_search import search_documents
+from ocr_app.views import UploadDocumentService, SearchDocumentView
+
 from rest_framework.parsers import MultiPartParser
 from rest_framework.exceptions import PermissionDenied
 from rest_framework.filters import SearchFilter
@@ -20,6 +30,9 @@ from .serializers import (
     ExternalDepartmentSerializer
 )
 from .permissions import IsDocumentAccessible,IsAdminOrReadOnly
+
+User = get_user_model()
+
 
 
 class InternalEntityViewSet(viewsets.ModelViewSet):
@@ -65,25 +78,8 @@ class ExternalDepartmentViewSet(viewsets.ModelViewSet):
 
 
 
-from rest_framework import viewsets
-from rest_framework.parsers import MultiPartParser
-from rest_framework.decorators import action
-from rest_framework.response import Response
-from rest_framework.exceptions import PermissionDenied
-from django_filters.rest_framework import DjangoFilterBackend
-from rest_framework.filters import SearchFilter
 
-from .models import Document, InternalEntity, ExternalEntity, InternalDepartment, ExternalDepartment
-from .serializers import DocumentSerializer, GetDocumentSerializer, InternalEntitySerializer, ExternalEntitySerializer, InternalDepartmentSerializer, ExternalDepartmentSerializer
-from .permissions import IsDocumentAccessible
-from django.contrib.auth import get_user_model
-from rest_framework import serializers
-import os
-from django.conf import settings
-from ocr_app.views import UploadDocumentService
-from ocr_app.utils_search import search_documents
-from ocr_app.views import UploadDocumentService, SearchDocumentView
-User = get_user_model()
+
 
 class UserSimpleSerializer(serializers.ModelSerializer):
     class Meta:
@@ -105,7 +101,7 @@ class DocumentViewSet(viewsets.ModelViewSet):
     filterset_fields = [
         'entity_type', 'document_type',
         'external_entity', 'internal_entity',
-        'internal_department', 'external_department'
+        'internal_department', 'external_department','title', 'document_number'
     ]
     search_fields = ['title', 'document_number']
 

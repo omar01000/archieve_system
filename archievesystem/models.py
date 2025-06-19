@@ -3,6 +3,9 @@ from django.core.exceptions import ValidationError
 from django.contrib.auth.models import AbstractUser
 from django.db import models
 from django.conf import settings
+from cloudinary.models import CloudinaryField
+
+
 
 class CustomUser(AbstractUser):
     email = models.EmailField(unique=True)
@@ -112,3 +115,5 @@ class Document(models.Model):
     def save(self, *args, **kwargs):
         self.clean()
         super().save(*args, **kwargs)
+        
+        
