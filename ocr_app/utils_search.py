@@ -1,15 +1,17 @@
+# services/utils_search.py
 import re
 import os
 import faiss
 from django.conf import settings
 from sentence_transformers import SentenceTransformer
 from archievesystem.models import Document
-from urllib.parse import unquote
+from urllib.parse import unquote, quote
 from django.core.files.storage import default_storage
 from collections import Counter
 from rapidfuzz import process, fuzz
 import numpy as np
 from rest_framework import serializers
+
 # Use multilingual model that supports Arabic and English well
 sbert_model = SentenceTransformer("sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2")
 
@@ -39,38 +41,35 @@ def get_original_filename(stored_name):
         filename = filename.rsplit('.', 1)[0]
     
     return unquote(filename)
+
 def get_file_url_info(doc):
-    """Get comprehensive file URL information"""
+    """Get comprehensive file URL information with proper encoding"""
     if not doc.file:
         return {
             'file_path': None,
             'url': None,
             'download_url': None,
             'media_url': None,
-            'direct_media_url': None  # Add this
+            'direct_media_url': None
         }
     
-    # Base file path from storage
+    # Get properly encoded URL using Django's storage
     file_path = default_storage.url(doc.file.name)
     
-    # Clean URL without encoding issues
-    clean_url = file_path.replace('%20', ' ')
-    
-    # Media URL (direct access)
-    media_url = f"{settings.MEDIA_URL}{doc.file.name}"
-    
-    # Direct media URL in the desired format
-    direct_media_url = f"{settings.MEDIA_URL}documents/{os.path.basename(doc.file.name)}"
+    # Build direct media URL with proper encoding
+    base_name = os.path.basename(doc.file.name)
+    encoded_name = quote(base_name)  # Properly encode special characters
+    direct_media_url = f"{settings.MEDIA_URL}documents/{encoded_name}"
     
     # Download URL
     download_url = f"/api/documents/{doc.id}/download/"
     
     return {
         'file_path': file_path,
-        'url': clean_url,
+        'url': file_path,  # Use storage URL for consistency
         'download_url': download_url,
-        'media_url': media_url,
-        'direct_media_url': direct_media_url  # Add this
+        'media_url': f"{settings.MEDIA_URL}{doc.file.name}",
+        'direct_media_url': direct_media_url
     }
 
 def advanced_normalize_text(text):
