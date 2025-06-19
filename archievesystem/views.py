@@ -81,7 +81,7 @@ from rest_framework import serializers
 import os
 from django.conf import settings
 from ocr_app.views import UploadDocumentService
-
+from ocr_app.utils_search import search_documents
 from ocr_app.views import UploadDocumentService, SearchDocumentView
 User = get_user_model()
 
@@ -121,9 +121,10 @@ class DocumentViewSet(viewsets.ModelViewSet):
         query = self.request.query_params.get('search', None)
 
         if query:
-            search_service = SearchDocumentsService(query)
-            results, _ = search_service.search()
-            queryset = queryset.filter(id__in=[doc['id'] for doc in results])
+            # Use the search_documents function directly
+            results = search_documents(query)
+            document_ids = [doc['id'] for doc in results]
+            queryset = queryset.filter(id__in=document_ids)
 
         return queryset
     
