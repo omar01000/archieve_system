@@ -7,31 +7,38 @@ from .utils_search import search_documents, suggest_documents
 from archievesystem.models import Document
 from rest_framework.views import APIView
 from rest_framework.response import Response
+
+
+
+# services/document_services.py
+
+from django.core.files.storage import default_storage
+from .utils_ocr import extract_text_from_image, extract_text_from_pdf, extract_text_from_word
+
+from django.core.files.storage import default_storage
+from .utils_ocr import extract_text_from_pdf, extract_text_from_word, extract_text_from_image
+
+from .utils_ocr import extract_text_from_pdf, extract_text_from_word, extract_text_from_image
+
 class UploadDocumentService:
     def __init__(self, file, user):
         self.file = file
         self.user = user
-    
+
     def upload(self):
-        # Clean filename to avoid URL encoding issues
-        clean_filename = self.file.name.replace(' ', '_').replace('%', '_')
-        
-        # Save file and get relative path only
-        relative_file_path = default_storage.save(f"documents/{clean_filename}", self.file)
-        
-        # Build full path for text extraction
-        file_path = os.path.join(settings.MEDIA_ROOT, relative_file_path)
-        
-        # Extract text
-        if self.file.name.lower().endswith(".pdf"):
-            extracted_text = extract_text_from_pdf(file_path)
-        elif self.file.name.lower().endswith(".docx"):
-            extracted_text = extract_text_from_word(file_path)
+        f = self.file  # ده كائن InMemoryUploadedFile من request.FILES
+
+        # OCR فقط – بدون أي عملية save يدوي
+        if f.name.lower().endswith('.pdf'):
+            extracted_text = extract_text_from_pdf(f)
+        elif f.name.lower().endswith('.docx'):
+            extracted_text = extract_text_from_word(f)
         else:
-            extracted_text = extract_text_from_image(file_path)
-        
-        # Return relative path for database storage
-        return relative_file_path, extracted_text
+            extracted_text = extract_text_from_image(f)
+
+        return f, extracted_text  # ← كائن الملف نفسه
+
+
 
 class SearchDocumentView(APIView):
     def get(self, request):
