@@ -58,18 +58,69 @@ def get_file_url_info(doc):
     # Build the direct URL at the root
     direct_media_url = f"/{encoded_name}"
     
-    # The default storage URL (which uses MEDIA_URL) might be set to root? 
-    # But we are changing the way we serve, so we might not use MEDIA_URL? 
-    # We'll keep the other URLs as the default_storage.url for now, but note that we are going to change the serving to root.
-    # Alternatively, we can set all to the root style? But the 'download_url' is an API endpoint.
-    file_url = default_storage.url(doc.file.name)  # This will be MEDIA_URL + doc.file.name
+    # The default storage URL
+    file_url = default_storage.url(doc.file.name)
     
     return {
         'file_path': file_url,
         'url': file_url,
         'download_url': f"/api/documents/{doc.id}/download/",
         'media_url': file_url,
-        'direct_media_url': direct_media_url   # This is the root path
+        'direct_media_url': direct_media_url
+    }
+
+def build_document_dict(doc, score=None, name=None, direct_media_url=None):
+    """Build comprehensive document dictionary with relationships"""
+    # Get URL info if not provided
+    if direct_media_url is None:
+        url_info = get_file_url_info(doc)
+        direct_media_url = url_info['direct_media_url']
+    
+    # Get original filename if not provided
+    if name is None and doc.file:
+        name = get_original_filename(doc.file.name)
+    
+    return {
+        "id": doc.id,
+        "internal_entity": None if not doc.internal_entity else {
+            "id": doc.internal_entity.id,
+            "name": doc.internal_entity.name
+        },
+        "internal_department": None if not doc.internal_department else {
+            "id": doc.internal_department.id,
+            "name": doc.internal_department.name
+        },
+        "external_entity": None if not doc.external_entity else {
+            "id": doc.external_entity.id,
+            "name": doc.external_entity.name
+        },
+        "external_department": None if not doc.external_department else {
+            "id": doc.external_department.id,
+            "name": doc.external_department.name,
+            "external_entity": doc.external_department.external_entity.id 
+                                if doc.external_department.external_entity else None
+        },
+        "uploaded_by": {
+            "id": doc.uploaded_by.id,
+            "username": doc.uploaded_by.username
+        } if doc.uploaded_by else None,
+        "last_modified_by": {
+            "id": doc.last_modified_by.id,
+            "username": doc.last_modified_by.username
+        } if doc.last_modified_by else None,
+        "title": doc.title,
+        "document_number": doc.document_number,
+        "notes": doc.notes,
+        "entity_type": doc.entity_type,
+        "document_type": doc.document_type,
+        "file": get_file_url_info(doc)['url'] if doc.file else None,
+        "uploaded_at": doc.uploaded_at.strftime("%Y-%m-%d %H:%M:%S") 
+                        if doc.uploaded_at else None,
+        "modified_at": doc.modified_at.strftime("%Y-%m-%d %H:%M:%S") 
+                       if doc.modified_at else None,
+        "score": score,
+        "name": name,
+        "direct_media_url": direct_media_url
     }
 
 def advanced_normalize_text(text):
@@ -96,7 +147,7 @@ def advanced_normalize_text(text):
     arabic_normalizations = {
         'أ': 'ا', 'إ': 'ا', 'آ': 'ا', 'ٱ': 'ا',
         'ة': 'ه', 
-        'ى': 'ي', 'ئ': 'ي', 'ؤ': 'و',
+        'ى': 'ي', 'ئ': 'ý', 'ؤ': 'و',
         'ك': 'ك', 'ی': 'ي', 'ے': 'ي',
         '\u200c': '', '\u200d': '', '\u200e': '', '\u200f': '',
     }
@@ -352,7 +403,7 @@ def index_documents():
         index = None
 
 def suggest_documents(query, top_n=4):
-    """Document suggestions with comprehensive URL info"""
+    """Document suggestions with comprehensive document data"""
     global index, documents_db, embedding_cache
     
     if index is None or (hasattr(index, 'ntotal') and index.ntotal == 0):
@@ -391,44 +442,78 @@ def suggest_documents(query, top_n=4):
             index.nprobe = min(6, getattr(index, 'nlist', 6))
         
         search_count = min(top_n * 4, index.ntotal)
-        _, indices = index.search(query_embedding, search_count)
+        distances, indices = index.search(query_embedding, search_count)
+        
+        candidate_ids = []
+        candidate_dists = []
+        for j, i in enumerate(indices[0]):
+            if i != -1 and i < len(documents_db):
+                candidate_ids.append(documents_db[i])
+                candidate_dists.append(distances[0][j])
+                if len(candidate_ids) >= top_n:
+                    break
+        
+        if not candidate_ids:
+            return []
+        
+        # Fetch documents with relationships
+        documents = Document.objects.filter(id__in=candidate_ids).select_related(
+            'internal_entity',
+            'internal_department',
+            'external_entity',
+            'external_department',
+            'external_department__external_entity',
+            'uploaded_by',
+            'last_modified_by'
+        )
+        
+        # Create mapping for quick access
+        id_to_doc = {doc.id: doc for doc in documents}
         
         results = []
-        for i in indices[0]:
-            if i != -1 and i < len(documents_db):
-                try:
-                    doc = Document.objects.get(id=documents_db[i])
-                    # Get original filename without timestamp/extension
-                    original_name = get_original_filename(doc.file.name)
-                    # Get comprehensive URL info
-                    url_info = get_file_url_info(doc)
-                    
-                    results.append({
-                        "id": doc.id,
-                        "name": original_name,
-                        "direct_media_url": url_info['direct_media_url'],
-                    })
-                    if len(results) >= top_n:
-                        break
-                except Document.DoesNotExist:
-                    continue
+        for doc_id, dist in zip(candidate_ids, candidate_dists):
+            if doc_id not in id_to_doc:
+                continue
+                
+            doc = id_to_doc[doc_id]
+            
+            # Calculate similarity score (0-100)
+            # Convert L2 distance to cosine similarity
+            cosine_sim = 1 - (dist ** 2) / 2.0
+            score = max(0, int(cosine_sim * 100))
+            
+            # Get original filename
+            original_name = get_original_filename(doc.file.name) if doc.file else None
+            
+            # Get URL info
+            url_info = get_file_url_info(doc)
+            
+            # Build full document dictionary
+            document_dict = build_document_dict(
+                doc,
+                score=score,
+                name=original_name,
+                direct_media_url=url_info['direct_media_url']
+            )
+            
+            results.append(document_dict)
         
         return results
-    except:
+    except Exception as e:
+        print(f"Suggest documents error: {e}")
         return []
 
 def search_documents(query):
-    """High-accuracy search with comprehensive URL information"""
+    """High-accuracy search with comprehensive document data"""
     if not query or len(query.strip()) < 2:
         return []
     
-    # Preserve original query for exact matching
     raw_query = query
     processed_query = advanced_normalize_text(query)
     if not processed_query:
         return []
     
-    # Extract terms with variants
+    # Extract search terms
     query_terms = enhanced_extract_search_terms(processed_query, 12)
     if not query_terms:
         return []
@@ -444,12 +529,19 @@ def search_documents(query):
             file_extension = parts[1]
             query_terms = enhanced_extract_search_terms(parts[0], 8)
     
-    # Enhanced scoring
+    # Optimized database query with select_related
+    documents = Document.objects.select_related(
+        'internal_entity',
+        'internal_department',
+        'external_entity',
+        'external_department',
+        'external_department__external_entity',
+        'uploaded_by',
+        'last_modified_by'
+    ).all()[:1500 if has_arabic else 800]
+    
     scored_results = []
     seen_ids = set()
-    
-    # Process more documents for Arabic queries
-    documents = Document.objects.all()[:1500 if has_arabic else 800]
     
     for doc in documents:
         if len(scored_results) >= (25 if has_arabic else 15):
@@ -458,9 +550,10 @@ def search_documents(query):
         if not doc.file or doc.id in seen_ids:
             continue
             
-        # Get original filename without timestamp/extension
+        # Get filename and URL info
         original_name = get_original_filename(doc.file.name)
         stored_filename = os.path.basename(doc.file.name)
+        url_info = get_file_url_info(doc)
         
         # Extension filtering
         if file_extension and not stored_filename.lower().endswith(f'.{file_extension}'):
@@ -470,33 +563,29 @@ def search_documents(query):
         filename_normalized = advanced_normalize_text(original_name)
         filename_terms = enhanced_extract_search_terms(filename_normalized, 25)
         
-        # Start scoring
+        # Scoring
         score = 0
         
-        # 1. Exact match bonus (highest priority)
+        # 1. Exact match bonus
         if raw_query.lower() == original_name.lower():
-            score += 1000  # Massive bonus for exact match
-        
-        # 2. Original filename contains raw query
+            score += 1000
+        # 2. Raw query in filename
         elif raw_query.lower() in original_name.lower():
             score += 200
-        
         # 3. Normalized exact match
         elif processed_query == filename_normalized:
             score += 150
-        
         # 4. Phrase matching
         if ('_' in raw_query or '-' in raw_query) and raw_query in original_name:
             score += 100
         
         # 5. Term-based matching
         for query_term in query_terms:
-            best_match_score = 0
-            for filename_term in filename_terms:
-                similarity = arabic_similarity_score(query_term, filename_term)
-                best_match_score = max(best_match_score, similarity)
-            
-            # Score conversion
+            best_match_score = max(
+                (arabic_similarity_score(query_term, filename_term) 
+                 for filename_term in filename_terms),
+                default=0
+            )
             if best_match_score >= 90:
                 score += 40
             elif best_match_score >= 80:
@@ -513,15 +602,11 @@ def search_documents(query):
             content_sample = doc.extracted_text[:1500]
             normalized_content = advanced_normalize_text(content_sample)
             
-            # Raw query in content
             if raw_query in content_sample:
                 score += 50
-            
-            # Normalized query in content
             elif processed_query in normalized_content:
                 score += 40
             
-            # Terms in content
             for term in query_terms:
                 if term in normalized_content:
                     score += 8 if re.search(r'[\u0600-\u06FF]', term) else 5
@@ -529,25 +614,20 @@ def search_documents(query):
         # Threshold filtering
         min_score = 20 if has_arabic else 25
         if score >= min_score:
-            scored_results.append((doc, score, original_name))
+            # Build full document dictionary
+            document_dict = build_document_dict(
+                doc,
+                score=score,
+                name=original_name,
+                direct_media_url=url_info['direct_media_url']
+            )
+            
+            scored_results.append(document_dict)
             seen_ids.add(doc.id)
     
-    # Sort results by score
-    scored_results.sort(key=lambda x: x[1], reverse=True)
-    max_results = 20 if has_arabic else 12
-    
-    # Return results with comprehensive URL information
-    results = []
-    for doc, score, name in scored_results[:max_results]:
-        url_info = get_file_url_info(doc)
-        results.append({
-            "id": doc.id,
-            "name": name,
-            "direct_media_url": url_info['direct_media_url'],
-            "score": score  # Include score for debugging
-        })
-    
-    return results
+    # Sort and limit results
+    scored_results.sort(key=lambda x: x["score"], reverse=True)
+    return scored_results[:20 if has_arabic else 12]
 
 def get_word_suggestions(query, limit=8):
     """Arabic-aware word suggestions"""
