@@ -4,6 +4,8 @@ from rest_framework.decorators import action
 from rest_framework.parsers import MultiPartParser
 from rest_framework.filters import SearchFilter
 from django_filters.rest_framework import DjangoFilterBackend
+from django.db.models import Q
+
 
 
 
@@ -112,7 +114,6 @@ class DocumentViewSet(viewsets.ModelViewSet):
                 last_modified_by = UserSimpleSerializer(read_only=True)
             return GetDocumentWithUsersSerializer
         return DocumentSerializer
-    from django.db.models import Q
 
     def get_queryset(self):
         queryset = super().get_queryset()
