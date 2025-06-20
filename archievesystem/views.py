@@ -115,30 +115,27 @@ class DocumentViewSet(viewsets.ModelViewSet):
             return GetDocumentWithUsersSerializer
         return DocumentSerializer
 
+
     def get_queryset(self):
         queryset = super().get_queryset()
         query = self.request.query_params.get('search')
 
-        if query:
-            # نحاول نستخدم الذكاء الاصطناعي الأول
-            results = search_documents(query) or []
-            ids = []
-            for doc in results:
-                try:
-                    ids.append(int(doc['id']))  # عدل دي لو IDs عندك UUID
-                except:
-                    continue
+        if not query:
+            return queryset
 
-            if ids:
-                return queryset.filter(id__in=ids)
+        # ⬅️ استخدم الذكاء الاصطناعي + البحث التقليدي سوا
+        ids = []
+        for doc in (search_documents(query) or []):
+            doc_id = doc.get('id')
+            if doc_id:
+                ids.append(doc_id)  # سيبها كده لو UUID
 
-            # لو الذكاء الاصطناعي مفيش منه فايدة، نستخدم البحث العادي
-            return queryset.filter(
-                Q(title__icontains=query) |
-                Q(document_number__icontains=query)
-            )
+        return queryset.filter(
+            Q(id__in=ids) |  # ← نتائج الذكاء الاصطناعي
+            Q(title__icontains=query) |
+            Q(document_number__icontains=query)  # ← بحث تقليدي
+        )
 
-        return queryset
 
     
     
