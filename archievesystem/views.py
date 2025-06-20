@@ -112,17 +112,33 @@ class DocumentViewSet(viewsets.ModelViewSet):
                 last_modified_by = UserSimpleSerializer(read_only=True)
             return GetDocumentWithUsersSerializer
         return DocumentSerializer
+    from django.db.models import Q
+
     def get_queryset(self):
         queryset = super().get_queryset()
-        query = self.request.query_params.get('search', None)
+        query = self.request.query_params.get('search')
 
         if query:
-            # Use the search_documents function directly
-            results = search_documents(query)
-            document_ids = [doc['id'] for doc in results]
-            queryset = queryset.filter(id__in=document_ids)
+            # نحاول نستخدم الذكاء الاصطناعي الأول
+            results = search_documents(query) or []
+            ids = []
+            for doc in results:
+                try:
+                    ids.append(int(doc['id']))  # عدل دي لو IDs عندك UUID
+                except:
+                    continue
+
+            if ids:
+                return queryset.filter(id__in=ids)
+
+            # لو الذكاء الاصطناعي مفيش منه فايدة، نستخدم البحث العادي
+            return queryset.filter(
+                Q(title__icontains=query) |
+                Q(document_number__icontains=query)
+            )
 
         return queryset
+
     
     
    
