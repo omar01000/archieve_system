@@ -196,9 +196,11 @@ CSRF_TRUSTED_ORIGINS = [
 ]
 
 
+
+
 CORS_ALLOWED_ORIGINS = [
-
-    "https://archievesystem-production.up.railway.app"
-   
+    
+    "https://archievesystem-production.up.railway.app",
+    "http://localhost:5173",  
+    "https://mohamed203-abd.github.io",
 ]
-
