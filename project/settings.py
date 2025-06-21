@@ -198,7 +198,7 @@ CSRF_TRUSTED_ORIGINS = [
 
 CORS_ALLOWED_ORIGINS = [
 
-    "https://archievesystem-production.up.railway.app/"
+    "https://archievesystem-production.up.railway.app"
    
 ]
 
